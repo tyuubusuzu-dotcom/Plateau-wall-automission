@@ -42,7 +42,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.1.3.0</span>
+            <span class="version">Ver.1.4.1</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -78,7 +78,8 @@
     <!-- CesiumJS JS -->
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Cesium.js"></script>
     <script>
-        Cesium.Ion.defaultAccessToken = '';
+        // 設定されたCesium ionアクセストークン
+        Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IjdlVjdMdUZ0VHhhdFlxTkoiLCJqdGkiOiIzZjY3NzkwNy1jMTVlLTQwYzEtYjZkMS1hZDgxY2Y0ODA3YWEiLCJpZCI6NDkzOTQ3LCJpc3MiOiJodHRwczovL2FwaS5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3ODkzODYwNjR9.wV7l2BvempXsAWlEzEkLuyh2KDeCOqmlx1-NnF69yKw';
 
         // 初期位置（大阪市天王寺区勝山付近）
         const defaultLocation = {
@@ -99,14 +100,9 @@
             localStorage.setItem('drone_app_date', todayStr);
         }
 
-        // 確実なOpenStreetMapタイルを使用して背景地図を表示
-        const osmImagery = new Cesium.OpenStreetMapImageryProvider({
-            url: 'https://tile.openstreetmap.org/'
-        });
-
+        // ビューアの初期化
         const viewer = new Cesium.Viewer('cesiumContainer', {
-            imageryProvider: osmImagery,
-            terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+            terrainProvider: Cesium.createWorldTerrain(),
             baseLayerPicker: false,
             geocoder: false,
             homeButton: false,
@@ -139,7 +135,7 @@
             localStorage.setItem('drone_app_date', new Date().toISOString().split('T')[0]);
         });
 
-        // 住所検索機能（Nominatim APIを利用して確実な位置取得）
+        // 住所検索機能（Nominatim API）
         async function searchAddress() {
             const query = document.getElementById('addressInput').value.trim();
             if (!query) return;
@@ -155,7 +151,7 @@
                         orientation: { heading: 0.0, pitch: Cesium.Math.toRadians(-45), roll: 0.0 }
                     });
                 } else {
-                    alert('該当する場所が見つかりませんでした。別のキーワード（例: 天王寺区役所 など）でお試しください。');
+                    alert('該当する場所が見つかりませんでした。別のキーワードでお試しください。');
                 }
             } catch (e) {
                 console.error(e);
@@ -179,7 +175,7 @@
                 const osmBuildings = await Cesium.createOsmBuildingsAsync();
                 viewer.scene.primitives.add(osmBuildings);
                 buildingsLoaded = true;
-                alert('3Dビルモデルを読み込みました。');
+                alert('3Dビルモデルを正常に読み込みました！');
             } catch (err) {
                 console.error(err);
                 alert('3Dビルの読み込みに失敗しました。');
@@ -270,10 +266,10 @@
                 }
 
                 const globalStart = Cesium.Matrix4.multiplyByPoint(transform, startLocal, new Cesium.Cartesian3());
-                const globalEnd = Cesium.Matrix4.multiplyByPoint(transform, endLocal, new Cesium.Cartesian3());
+                const globalEndCorrect = Cesium.Matrix4.multiplyByPoint(transform, endLocal, new Cesium.Cartesian3());
 
                 generatedWaypoints.push(globalStart);
-                generatedWaypoints.push(globalEnd);
+                generatedWaypoints.push(globalEndCorrect);
             }
 
             const flatPositions = [];
