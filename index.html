@@ -46,13 +46,13 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.1.4.3</span>
+            <span class="version">Ver.1.5.0</span>
         </div>
 
         <!-- 住所検索Box -->
         <label>住所・地名検索:</label>
         <div class="search-box">
-            <input type="text" id="addressInput" placeholder="例: 大阪市中央区">
+            <input type="text" id="addressInput" placeholder="例: 大阪市中央区難波1丁目">
             <button id="searchBtn" class="btn-primary">検索</button>
         </div>
 
@@ -104,7 +104,7 @@
             localStorage.setItem('drone_app_date', todayStr);
         }
 
-        // ビューアの初期化（クラッシュを防ぐため安定したEllipsoid地形を使用）
+        // ビューアの初期化
         const viewer = new Cesium.Viewer('cesiumContainer', {
             terrainProvider: new Cesium.EllipsoidTerrainProvider(),
             baseLayerPicker: false,
@@ -139,13 +139,13 @@
             localStorage.setItem('drone_app_date', new Date().toISOString().split('T')[0]);
         });
 
-        // 住所検索機能（Nominatim API）
+        // 住所検索機能（日本国内限定に改善）
         async function searchAddress() {
             const query = document.getElementById('addressInput').value.trim();
             if (!query) return;
 
             try {
-                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=jp&q=${encodeURIComponent(query)}`);
                 const data = await response.json();
                 if (data && data.length > 0) {
                     const lon = parseFloat(data[0].lon);
@@ -228,7 +228,7 @@
             }
         }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-        // ジグザグ飛行ルートの計算
+        // ジグザグ飛行ルートの計算（エラー防止対策済み）
         function calculateZigzagRoute() {
             const offsetDist = parseFloat(document.getElementById('offsetDist').value);
             const pitchDist = parseFloat(document.getElementById('pitchDist').value);
@@ -250,13 +250,9 @@
             for (let i = 0; i <= numRows; i++) {
                 const currentZ = localP1.z - (i * pitchDist);
 
-                const testLocalStart = new Cesium.Cartesian3(localP1.x, localP1.y + wallOffset, currentZ);
-                const testGlobal = Cesium.Matrix4.multiplyByPoint(transform, testLocalStart, new Cesium.Cartesian3());
-                const cartographic = Cesium.Cartographic.fromCartesian(testGlobal);
-                
-                const currentAltitude = cartographic.height;
-
-                if (currentAltitude < minHeightFromGround) {
+                // ローカル座標のZ高さを基準に最低地上高を下回らないかチェック
+                if (currentZ < minHeightFromGround) {
+                    console.log('最低地上高制限に達したためルート生成を終了します。');
                     break;
                 }
 
@@ -274,6 +270,12 @@
 
                 generatedWaypoints.push(globalStart);
                 generatedWaypoints.push(globalEndCorrect);
+            }
+
+            // 万が一ウェイポイントが不足している場合のガード処理
+            if (generatedWaypoints.length < 2) {
+                alert('有効なルート座標が生成されませんでした。総高さやピッチ、最低地上高の設定値を見直してください。');
+                return;
             }
 
             const flatPositions = [];
