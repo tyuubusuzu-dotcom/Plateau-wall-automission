@@ -48,7 +48,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.1.7.0</span>
+            <span class="version">Ver.1.7.1</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -62,7 +62,7 @@
         <button id="load3dBtn" class="btn-3d">3Dビルモデルを表示する</button>
 
         <div class="status" id="instruction">
-            1. 地図上でビルを探し、3D表示させてから上辺の**「左上の角（A地点）」**をクリックしてください。
+            1. 地図上でビルを探し、3D表示させてから上辺の**<span>「左上の角（A地点）」</span>**をクリックしてください。
         </div>
 
         <label>壁からのオフセット距離 (m):</label>
@@ -212,7 +212,7 @@
             if (clickStep === 0) {
                 pointP1 = pickedPosition;
                 
-                // estimatedHeightの自動取得を試みる
+                // estimatedHeightの自動取得
                 if (picked && picked.getProperty) {
                     const estH = picked.getProperty('cesium#estimatedHeight') || picked.getProperty('height');
                     if (estH) {
@@ -232,7 +232,7 @@
                 pointP2 = pickedPosition;
                 clickStep = 2;
                 document.getElementById('instruction').innerHTML = '3. ルート生成完了！パラメータ変更時は「ルート再計算」を押してください。';
-                document.getElementById('instruction').style.color = '#28a745';
+                document.getElementById('instruction'].style.color = '#28a745';
                 document.getElementById('instruction').style.borderColor = '#d4edda';
                 document.getElementById('instruction').style.background = '#f1f8f5';
 
@@ -256,7 +256,7 @@
             calculateZigzagRoute();
         });
 
-        // ジグザグ飛行ルートの計算メインロジック
+        // ジグザグ飛行ルートの計算（幾何学的法線ベクトル対応版）
         function calculateZigzagRoute() {
             const offsetDist = parseFloat(document.getElementById('offsetDist').value) || 5.0;
             const pitchDist = parseFloat(document.getElementById('pitchDist').value) || 1.0;
@@ -264,7 +264,6 @@
             const extendB = parseFloat(document.getElementById('extendB').value) || 0.0;
             const minHeightFromGround = parseFloat(document.getElementById('minHeightFromGround').value) || 2.0;
 
-            // 既存のルート線があれば削除
             if (routeEntity) {
                 viewer.entities.remove(routeEntity);
                 routeEntity = null;
@@ -277,61 +276,68 @@
             const localP1 = Cesium.Matrix4.multiplyByPoint(invTransform, pointP1, new Cesium.Cartesian3());
             const localP2 = Cesium.Matrix4.multiplyByPoint(invTransform, pointP2, new Cesium.Cartesian3());
 
-            // AからBへの方向ベクトルと長さ
-            const dirVec = Cesium.Cartesian3.subtract(localP2, localP1, new Cesium.Cartesian3());
-            const lengthAB = Cesium.Cartesian3.magnitude(dirVec);
-            const unitDir = Cesium.Cartesian3.normalize(dirVec, new Cesium.Cartesian3());
+            // AからBへの水平方向（X:東, Y:北）のベクトルと長さを計算
+            const dx = localP2.x - localP1.x;
+            const dy = localP2.y - localP1.y;
+            const horizLen = Math.sqrt(dx * dx + dy * dy);
 
-            // 延長を考慮した新しいローカル始点・終点（A側反対方向へ extendA、B側延長方向へ extendB）
-            const extendedLocalP1 = Cesium.Cartesian3.add(
-                localP1, 
-                Cesium.Cartesian3.multiplyByScalar(unitDir, -extendA, new Cesium.Cartesian3()), 
-                new Cesium.Cartesian3()
-            );
-            const extendedLocalP2 = Cesium.Cartesian3.add(
-                localP2, 
-                Cesium.Cartesian3.multiplyByScalar(unitDir, extendB, new Cesium.Cartesian3()), 
-                new Cesium.Cartesian3()
-            );
+            if (horizLen === 0) {
+                alert('A地点とB地点が同じ位置です。');
+                return;
+            }
 
-            const wallOffset = -offsetDist; // 外壁から離す方向（Y軸マイナス側）
+            // 壁の方向の単位ベクトル (ux, uy)
+            const ux = dx / horizLen;
+            const uy = dy / horizLen;
+
+            // 壁の向きに対して正確に直交する外向き法線ベクトル (nx, ny)
+            // 西から東へ向かうベクトルに対し、右側（外側）を向く法線
+            const nx = -uy;
+            const ny = ux;
+
+            // 延長を考慮したA'とB'のローカル座標
+            const extA_x = localP1.x - ux * extendA;
+            const extA_y = localP1.y - uy * extendA;
+            const extB_x = localP2.x + ux * extendB;
+            const extB_y = localP2.y + uy * extendB;
+
+            // オフセット（壁から指定距離離す）
+            const offsetX = nx * offsetDist;
+            const offsetY = ny * offsetDist;
 
             generatedWaypoints = [];
-            
-            // ビル高さ（estimatedHeight）から、最下部の高さを決定（最低地上高リミットを考慮）
-            // localP1.z が上部高さ、地面は (localP1.z - detectedBuildingHeight) と想定
             const topZ = localP1.z;
             const groundZ = localP1.z - detectedBuildingHeight;
             const targetLowestZ = groundZ + minHeightFromGround;
 
-            // 上部から下へピッチごとに降下
             let currentZ = topZ;
             let rowIndex = 0;
 
             while (currentZ >= targetLowestZ) {
                 let startLocal, endLocal;
+
                 if (rowIndex % 2 === 0) {
                     // 偶数行: A側からB側へ
-                    startLocal = new Cesium.Cartesian3(extendedLocalP1.x, extendedLocalP1.y + wallOffset, currentZ);
-                    endLocal = new Cesium.Cartesian3(extendedLocalP2.x, extendedLocalP2.y + wallOffset, currentZ);
+                    startLocal = new Cesium.Cartesian3(extA_x + offsetX, extA_y + offsetY, currentZ);
+                    endLocal = new Cesium.Cartesian3(extB_x + offsetX, extB_y + offsetY, currentZ);
                 } else {
                     // 奇数行: B側からA側へ（ジグザグ）
-                    startLocal = new Cesium.Cartesian3(extendedLocalP2.x, extendedLocalP2.y + wallOffset, currentZ);
-                    endLocal = new Cesium.Cartesian3(extendedLocalP1.x, extendedLocalP1.y + wallOffset, currentZ);
+                    startLocal = new Cesium.Cartesian3(extB_x + offsetX, extB_y + offsetY, currentZ);
+                    endLocal = new Cesium.Cartesian3(extA_x + offsetX, extA_y + offsetY, currentZ);
                 }
 
                 const globalStart = Cesium.Matrix4.multiplyByPoint(transform, startLocal, new Cesium.Cartesian3());
-                const globalEnd = Cesium.Matrix4.multiplyByPoint(transform, endLocal, new Cesium.Cartesian3());
+                const globalEndCorrect = Cesium.Matrix4.multiplyByPoint(transform, endLocal, new Cesium.Cartesian3());
 
                 generatedWaypoints.push(globalStart);
-                generatedWaypoints.push(globalEnd);
+                generatedWaypoints.push(globalEndCorrect);
 
                 currentZ -= pitchDist;
                 rowIndex++;
             }
 
             if (generatedWaypoints.length < 2) {
-                alert('有効なルート座標が生成されませんでした。ピッチや最低地上高の設定値を見直してください。');
+                alert('有効なルート座標が生成されませんでした。設定値を確認してください。');
                 return;
             }
 
