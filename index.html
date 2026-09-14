@@ -15,7 +15,9 @@
             padding: 15px; border-radius: 8px; z-index: 100; width: 360px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
             max-height: 90vh; overflow-y: auto;
         }
-        h3 { margin-top: 0; font-size: 15px; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 5px; }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #007bff; padding-bottom: 5px; margin-bottom: 10px; }
+        h3 { margin: 0; font-size: 15px; color: #333; }
+        .version { font-size: 11px; color: #666; font-weight: bold; }
         label { display: block; margin-top: 8px; font-size: 12px; font-weight: bold; color: #444; }
         input[type="text"], input[type="number"] { width: 100%; padding: 6px; margin-top: 3px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
         button { width: 100%; padding: 8px; margin-top: 8px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; font-size: 13px; }
@@ -38,7 +40,10 @@
     <div id="cesiumContainer"></div>
     
     <div id="panel">
-        <h3>外壁点検ルート自動生成</h3>
+        <div class="panel-header">
+            <h3>外壁点検ルート自動生成</h3>
+            <span class="version">Ver.1.2.0</span>
+        </div>
 
         <!-- 住所検索Box -->
         <label>住所・地名検索:</label>
@@ -47,7 +52,7 @@
             <button id="searchBtn" class="btn-primary">検索</button>
         </div>
 
-        <!-- 3Dビル読込ボタン -->
+        <!-- 3Dビルモデル読込ボタン -->
         <button id="load3dBtn" class="btn-3d">3Dビルモデルを表示する</button>
 
         <div class="status" id="instruction">
@@ -73,9 +78,10 @@
     <!-- CesiumJS JS -->
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Cesium.js"></script>
     <script>
-        Cesium.Ion.defaultAccessToken = 'YOUR_CESIUM_ION_TOKEN'; // 必要に応じてご自身のトークンを設定
+        // アクセストークン不要で基本動作するよう設定
+        Cesium.Ion.defaultAccessToken = '';
 
-        // 1. 初期位置（勝山4-9-17）または前回の位置復元
+        // 初期位置（勝山4-9-17）または前回の位置復元
         const defaultLocation = {
             lon: 135.524223,
             lat: 34.654049,
@@ -94,7 +100,7 @@
             localStorage.setItem('drone_app_date', todayStr);
         }
 
-        // 2. 地理院地図（標準地図）を背景プロバイダとしてビューア初期化
+        // 地理院地図（標準地図）を背景プロバイダとしてビューア初期化（トークンエラー回避のためEllipsoid地形を使用）
         const gsiImageryProvider = new Cesium.UrlTemplateImageryProvider({
             url: 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',
             credit: '国土地理院',
@@ -103,8 +109,12 @@
 
         const viewer = new Cesium.Viewer('cesiumContainer', {
             imageryProvider: gsiImageryProvider,
-            terrainProvider: Cesium.createWorldTerrain(),
-            baseLayerPicker: false // 独自の地理院地図を固定するため非表示
+            terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+            baseLayerPicker: false,
+            geocoder: false,
+            homeButton: false,
+            sceneModePicker: false,
+            navigationHelpButton: false
         });
 
         // カメラ視点適用
@@ -117,7 +127,7 @@
             }
         });
 
-        // カメラ移動時に位置を自動保存（当日2回目以降の復元用）
+        // カメラ移動時に位置を自動保存
         viewer.camera.moveEnd.addEventListener(() => {
             const cartographic = viewer.camera.positionCartographic;
             const currentPos = {
@@ -132,9 +142,9 @@
             localStorage.setItem('drone_app_date', new Date().toISOString().split('T')[0]);
         });
 
-        // 3. 住所検索機能（国土地理院 ジオコーディングAPIを利用）
+        // 住所検索機能（国土地理院 ジオコーディングAPI）
         async function searchAddress() {
-            const query = document.getElementById('addressInput').value;
+            const query = document.getElementById('addressInput').value.trim();
             if (!query) return;
 
             try {
@@ -151,7 +161,7 @@
                 }
             } catch (e) {
                 console.error(e);
-                alert('住所検索に失敗しました。');
+                alert('住所検索の通信に失敗しました。');
             }
         }
 
@@ -160,7 +170,7 @@
             if (e.key === 'Enter') searchAddress();
         });
 
-        // 4. 3Dビルモデル読込ボタン
+        // 3Dビルモデル読込ボタン（OSM Buildings）
         let buildingsLoaded = false;
         document.getElementById('load3dBtn').addEventListener('click', async function() {
             if (buildingsLoaded) {
@@ -168,24 +178,17 @@
                 return;
             }
             try {
-                const googleBuildings = await Cesium.createGooglePhotorealistic3DTileset();
-                viewer.scene.primitives.add(googleBuildings);
+                const osmBuildings = await Cesium.createOsmBuildingsAsync();
+                viewer.scene.primitives.add(osmBuildings);
                 buildingsLoaded = true;
-                alert('Google 3Dビルモデルを読み込みました。');
-            } catch (e) {
-                console.log('Google 3D Tiles読み込み失敗、OSMビルを試行します');
-                try {
-                    const osmBuildings = await Cesium.createOsmBuildingsAsync();
-                    viewer.scene.primitives.add(osmBuildings);
-                    buildingsLoaded = true;
-                    alert('OSM 3Dビルモデルを読み込みました。');
-                } catch (err) {
-                    alert('3Dビルの読み込みに失敗しました。');
-                }
+                alert('3Dビルモデル（OSM）を読み込みました。');
+            } catch (err) {
+                console.error(err);
+                alert('3Dビルの読み込みに失敗しました。');
             }
         });
 
-        // 5. 2点選択 & ルート生成ロジック
+        // 2点選択 & ルート生成ロジック
         let clickStep = 0;
         let pointP1 = null;
         let pointP2 = null;
@@ -195,7 +198,7 @@
         handler.setInputAction(function (movement) {
             const pickedPosition = viewer.scene.pickPosition(movement.position);
             if (!pickedPosition) {
-                alert('3Dモデルの表面をクリックしてください。');
+                alert('3Dモデルの表面（または建物の角）を正確にクリックしてください。');
                 return;
             }
 
@@ -227,7 +230,7 @@
             }
         }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-        // ジグザグ飛行ルートの計算（最低地上高リミット対応）
+        // ジグザグ飛行ルートの計算
         function calculateZigzagRoute() {
             const offsetDist = parseFloat(document.getElementById('offsetDist').value);
             const pitchDist = parseFloat(document.getElementById('pitchDist').value);
@@ -249,19 +252,13 @@
             for (let i = 0; i <= numRows; i++) {
                 const currentZ = localP1.z - (i * pitchDist);
 
-                // 仮のグローバル点を計算して地上高をチェック
                 const testLocalStart = new Cesium.Cartesian3(localP1.x, localP1.y + wallOffset, currentZ);
                 const testGlobal = Cesium.Matrix4.multiplyByPoint(transform, testLocalStart, new Cesium.Cartesian3());
                 const cartographic = Cesium.Cartographic.fromCartesian(testGlobal);
                 
-                // 地形高度（標高）を取得
-                const terrainHeight = viewer.scene.globe.getHeight(cartographic) || 0;
                 const currentAltitude = cartographic.height;
-                const heightAboveGround = currentAltitude - terrainHeight;
 
-                // 「地上から何mでやめるか」を下回る場合は生成を停止
-                if (heightAboveGround < minHeightFromGround) {
-                    console.log(`高度制限（地上${minHeightFromGround}m以上）に達したため、これ以下のルートは除外します。`);
+                if (currentAltitude < minHeightFromGround) {
                     break;
                 }
 
