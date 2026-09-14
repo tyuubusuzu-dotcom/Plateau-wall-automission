@@ -46,7 +46,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.1.6.0</span>
+            <span class="version">Ver.1.6.1</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -225,7 +225,7 @@
             }
         }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-        // ジグザグ飛行ルートの計算（確実生成版）
+        // ジグザグ飛行ルートの計算
         function calculateZigzagRoute() {
             const offsetDist = parseFloat(document.getElementById('offsetDist').value);
             const pitchDist = parseFloat(document.getElementById('pitchDist').value);
@@ -262,14 +262,10 @@
                 generatedWaypoints.push(globalEndCorrect);
             }
 
-            const flatPositions = [];
-            generatedWaypoints.forEach(pt => {
-                flatPositions.push(pt.x, pt.y, pt.z);
-            });
-
+            // 修正：Cartesian3の配列をそのままpolylineのpositionsに渡す
             viewer.entities.add({
                 polyline: {
-                    positions: Cesium.Cartesian3.fromArray(flatPositions),
+                    positions: generatedWaypoints,
                     width: 4,
                     material: Cesium.Color.YELLOW
                 }
