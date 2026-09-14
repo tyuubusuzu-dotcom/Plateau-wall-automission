@@ -52,7 +52,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.4.0</span>
+            <span class="version">Ver.2.5.0</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -63,7 +63,7 @@
         </div>
 
         <!-- 3Dビルモデル読込ボタン -->
-        <button id="load3dBtn" class="btn-3d">3Dビルモデルを表示する</button>
+        <button id="load3dBtn" class="btn-3d">3Dビルモデルを表示する（300m圏内最適化）</button>
 
         <div class="status" id="instruction">
             1. 地図上でビルを探し、上辺の**<span>「左上の角（A地点）」</span>**をクリックしてください。
@@ -144,7 +144,7 @@
             navigationHelpButton: false
         });
 
-        // マウススクロールによるズーム感度を調整（デフォルト5.0から1.5に変更して微調整しやすく）
+        // マウススクロールによるズーム感度を調整（微調整しやすく）
         viewer.scene.screenSpaceCameraController.zoomFactor = 1.5;
 
         async function initBaseImagery() {
@@ -208,6 +208,7 @@
             if (e.key === 'Enter') searchAddress();
         });
 
+        // 3Dビルモデル読込ボタン（表示中心300m圏内最適化）
         let buildingsLoaded = false;
         document.getElementById('load3dBtn').addEventListener('click', async function() {
             if (buildingsLoaded) {
@@ -216,9 +217,15 @@
             }
             try {
                 const osmBuildings = await Cesium.createOsmBuildingsAsync();
+                
+                // 300m圏内周辺の描画を最適化する設定
+                osmBuildings.dynamicScreenSpaceError = true;
+                osmBuildings.dynamicScreenSpaceErrorDensity = 0.005; // 近くの高精度描画を優先し遠方をカット
+                osmBuildings.maximumMemoryUsage = 256; // メモリ制限を最適化
+
                 viewer.scene.primitives.add(osmBuildings);
                 buildingsLoaded = true;
-                alert('3Dビルモデルを正常に読み込みました！');
+                alert('3Dビルモデルを300m圏内最適モードで正常に読み込みました！');
             } catch (err) {
                 console.error(err);
                 alert('3Dビルの読み込みに失敗しました。');
@@ -226,8 +233,8 @@
         });
 
         let clickStep = 0;
-        let pointP1 = null; // モデル上のA地点
-        let pointP2 = null; // モデル上のB地点
+        let pointP1 = null; 
+        let pointP2 = null; 
         let detectedBuildingHeight = 30.0;
         let generatedWaypoints = [];
         let routeEntity = null;
@@ -298,14 +305,12 @@
             calculateZigzagRoute();
         });
 
-        // 「地点選択やり直し」ボタン
         document.getElementById('clearSelectionBtn').addEventListener('click', function() {
             clickStep = 0;
             pointP1 = null;
             pointP2 = null;
             generatedWaypoints = [];
 
-            // 描画されたピンやルートのエンティティを削除
             pointEntities.forEach(ent => viewer.entities.remove(ent));
             pointEntities = [];
             if (routeEntity) {
@@ -313,13 +318,11 @@
                 routeEntity = null;
             }
 
-            // 入力欄のクリア
             document.getElementById('measuredLatA').value = '';
             document.getElementById('measuredLonA').value = '';
             document.getElementById('measuredLatB').value = '';
             document.getElementById('measuredLonB').value = '';
 
-            // ボタンの無効化とインストールのリセット
             document.getElementById('recalculateBtn').setAttribute('disabled', 'true');
             document.getElementById('exportBtn').setAttribute('disabled', 'true');
 
