@@ -48,7 +48,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.1.7.2</span>
+            <span class="version">Ver.1.7.3</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -264,7 +264,7 @@
             calculateZigzagRoute();
         });
 
-        // ジグザグ飛行ルートの計算（幾何学的法線ベクトル対応版）
+        // ジグザグ飛行ルートの計算（外側オフセット反転対応版）
         function calculateZigzagRoute() {
             const offsetDist = parseFloat(document.getElementById('offsetDist').value) || 5.0;
             const pitchDist = parseFloat(document.getElementById('pitchDist').value) || 1.0;
@@ -298,9 +298,9 @@
             const ux = dx / horizLen;
             const uy = dy / horizLen;
 
-            // 壁の向きに対して正確に直交する外向き法線ベクトル (nx, ny)
-            const nx = -uy;
-            const ny = ux;
+            // 法線ベクトルを反転させ、必ずビル手前側（外側）に向かうように修正
+            const nx = uy;
+            const ny = -ux;
 
             // 延長を考慮したA'とB'のローカル座標
             const extA_x = localP1.x - ux * extendA;
@@ -308,7 +308,7 @@
             const extB_x = localP2.x + ux * extendB;
             const extB_y = localP2.y + uy * extendB;
 
-            // オフセット（壁から指定距離離す）
+            // オフセット（壁から指定距離外側へ離す）
             const offsetX = nx * offsetDist;
             const offsetY = ny * offsetDist;
 
