@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ドローン外壁ジグザグ飛行ルート生成アプリ</title>
+    <!-- CesiumJS CSS -->
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        html, body, #cesiumContainer {
+            width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; font-family: sans-serif;
+        }
+        #panel {
+            position: absolute; top: 15px; left: 15px; background: rgba(255, 255, 255, 0.95);
+            padding: 20px; border-radius: 8px; z-index: 100; width: 340px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        h3 { margin-top: 0; font-size: 16px; color: #333; }
+        label { display: block; margin-top: 10px; font-size: 13px; font-weight: bold; color: #444; }
+        input { width: 100%; padding: 6px; margin-top: 4px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { width: 100%; padding: 8px; margin-top: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; }
+        .btn-primary { background: #007bff; }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-secondary { background: #6c757d; }
+        .btn-secondary:hover { background: #5a6268; }
+        .btn-success { background: #28a745; }
+        .btn-success:hover { background: #218838; }
+        .btn-success:disabled { background: #ccc; cursor: not-allowed; }
+        .status { margin-top: 12px; font-size: 13px; color: #d9534f; background: #fdf7f7; padding: 10px; border-radius: 4px; border: 1px solid #ebccd1; line-height: 1.4; }
+    </style>
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+    
+    <div id="panel">
+        <h3>外壁点検ルート自動生成</h3>
+        <div class="status" id="instruction">
+            1. 3Dモデル上のビルの上辺**「左上の角」**をクリックしてください。
+        </div>
+
+        <label>壁からのオフセット距離 (m):</label>
+        <input type="number" id="offsetDist" value="5.0" step="0.5">
+        
+        <label>垂直ピッチ間隔 (m):</label>
+        <input type="number" id="pitchDist" value="1.0" step="0.5">
+
+        <label>測定総高さ (m):</label>
+        <input type="number" id="totalHeight" value="15.0" step="1.0">
+
+        <button id="exportBtn" class="btn-success" disabled>ルート座標をCSVダウンロード</button>
+        <button id="resetBtn" class="btn-secondary">リセット（やり直す）</button>
+    </div>
+
+    <!-- CesiumJS JS -->
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Cesium.js"></script>
+    <script>
+        // Cesium ionのデフォルトアクセストークン（必要に応じてご自身のトークンに変更してください）
+        Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...（デフォルトまたはご自身のトークン）';
+
+        // ビューアの初期化
+        const viewer = new Cesium.Viewer('cesiumContainer', {
+            terrainProvider: Cesium.createWorldTerrain()
+        });
+
+        // 3D都市モデル（Google Photorealistic 3D Tiles または OSM Buildings）のロード
+        async function init3DMap() {
+            try {
+                const googleBuildings = await Cesium.createGooglePhotorealistic3DTileset();
+                viewer.scene.primitives.add(googleBuildings);
+            } catch (e) {
+                console.log('Google 3D Tiles読み込み失敗、OSMビルを使用します');
+                const osmBuildings = await Cesium.createOsmBuildingsAsync();
+                viewer.scene.primitives.add(osmBuildings);
+            }
+
+            // 初期視点（例：大阪城周辺）
+            viewer.camera.setView({
+                destination: Cesium.Cartesian3.fromDegrees(135.5258, 34.6873, 400),
+                orientation: { heading: 0.0, pitch: Cesium.Math.toRadians(-45), roll: 0.0 }
+            });
+        }
+        init3DMap();
+
+        // 状態変数
+        let clickStep = 0; // 0: 左上待ち, 1: 右上待ち, 2: 完了
+        let pointP1 = null; // 左上の角
+        let pointP2 = null; // 右上の角
+        let generatedWaypoints = [];
+
+        // マウスクリックイベント
+        const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+        handler.setInputAction(function (movement) {
+            const pickedPosition = viewer.scene.pickPosition(movement.position);
+            if (!pickedPosition) return;
+
+            if (clickStep === 0) {
+                pointP1 = pickedPosition;
+                clickStep = 1;
+                document.getElementById('instruction').innerHTML = '2. 次にビルの上辺**「右上の角」**をクリックしてください。';
+                
+                viewer.entities.add({
+                    position: pointP1,
+                    point: { pixelSize: 12, color: Cesium.Color.RED },
+                    label: { text: 'P1 (左上)', font: '12pt sans-serif', pixelOffset: new Cesium.Cartesian2(0, -20) }
+                });
+            } else if (clickStep === 1) {
+                pointP2 = pickedPosition;
+                clickStep = 2;
+                document.getElementById('instruction').innerHTML = '3. ルート生成完了！下部のボタンからCSVを出力できます。';
+                document.getElementById('instruction').style.color = '#28a745';
+                document.getElementById('instruction').style.borderColor = '#d4edda';
+                document.getElementById('instruction').style.background = '#f1f8f5';
+
+                viewer.entities.add({
+                    position: pointP2,
+                    point: { pixelSize: 12, color: Cesium.Color.BLUE },
+                    label: { text: 'P2 (右上)', font: '12pt sans-serif', pixelOffset: new Cesium.Cartesian2(0, -20) }
+                });
+
+                // ルート生成処理の実行
+                calculateZigzagRoute();
+            }
+        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+        // ジグザグ飛行ルートの計算ロジック
+        function calculateZigzagRoute() {
+            const offsetDist = parseFloat(document.getElementById('offsetDist').value);
+            const pitchDist = parseFloat(document.getElementById('pitchDist').value);
+            const totalHeight = parseFloat(document.getElementById('totalHeight').value);
+
+            // 2点の中点を基準に、現地の接平面座標系（ENU）を構築
+            const midpoint = Cesium.Cartesian3.midpoint(pointP1, pointP2, new Cesium.Cartesian3());
+            const transform = Cesium.Transforms.eastNorthUpToFixedFrame(midpoint);
+            const invTransform = Cesium.Matrix4.inverse(transform, new Cesium.Matrix4());
+
+            // グローバル座標をローカルENU座標系に変換
+            const localP1 = Cesium.Matrix4.multiplyByPoint(invTransform, pointP1, new Cesium.Cartesian3());
+            const localP2 = Cesium.Matrix4.multiplyByPoint(invTransform, pointP2, new Cesium.Cartesian3());
+
+            // 外壁から離れる方向（ローカルY軸マイナス方向を建物外側・南側と仮定）
+            const wallOffset = -offsetDist;
+
+            generatedWaypoints = [];
+            const numRows = Math.floor(totalHeight / pitchDist);
+
+            for (let i = 0; i <= numRows; i++) {
+                const currentZ = localP1.z - (i * pitchDist);
+                let startLocal, endLocal;
+
+                if (i % 2 === 0) {
+                    // 偶数行: 左から右へ
+                    startLocal = new Cesium.Cartesian3(localP1.x, localP1.y + wallOffset, currentZ);
+                    endLocal = new Cesium.Cartesian3(localP2.x, localP2.y + wallOffset, currentZ);
+                } else {
+                    // 奇数行: 右から左へ（ジグザグ折り返し）
+                    startLocal = new Cesium.Cartesian3(localP2.x, localP2.y + wallOffset, currentZ);
+                    endLocal = new Cesium.Cartesian3(localP1.x, localP1.y + wallOffset, currentZ);
+                }
+
+                // グローバル（WGS84）座標系に戻す
+                const globalStart = Cesium.Matrix4.multiplyByPoint(transform, startLocal, new Cesium.Cartesian3());
+                const globalEnd = Cesium.Matrix4.multiplyByPoint(transform, endLocal, new Cesium.Cartesian3());
+
+                generatedWaypoints.push(globalStart);
+                generatedWaypoints.push(globalEnd);
+            }
+
+            // 3Dビューア上に飛行ルート（黄色いライン）を描画
+            const flatPositions = [];
+            generatedWaypoints.forEach(pt => {
+                flatPositions.push(pt.x, pt.y, pt.z);
+            });
+
+            viewer.entities.add({
+                polyline: {
+                    positions: Cesium.Cartesian3.fromArray(flatPositions),
+                    width: 4,
+                    material: Cesium.Color.YELLOW
+                }
+            });
+
+            // CSVダウンロードボタンを有効化
+            document.getElementById('exportBtn').removeAttribute('disabled');
+        }
+
+        // CSVエクスポート機能
+        document.getElementById('exportBtn').addEventListener('click', function() {
+            if (generatedWaypoints.length === 0) return;
+
+            let csvContent = "data:text/csv;charset=utf-8,No,Latitude,Longitude,Height(m),X,Y,Z\n";
+            
+            generatedWaypoints.forEach((pt, index) => {
+                const cartographic = Cesium.Cartographic.fromCartesian(pt);
+                const lat = Cesium.Math.toDegrees(cartographic.latitude);
+                const lon = Cesium.Math.toDegrees(cartographic.longitude);
+                const height = cartographic.height;
+                csvContent += `${index + 1},${lat.toFixed(8)},${lon.toFixed(8)},${height.toFixed(2)},${pt.x.toFixed(2)},${pt.y.toFixed(2)},${pt.z.toFixed(2)}\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "drone_zigzag_flight_route.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
+        // リセットボタン
+        document.getElementById('resetBtn').addEventListener('click', function() {
+            location.reload();
+        });
+    </script>
+</body>
+</html>
