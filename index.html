@@ -42,13 +42,13 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.1.2.0</span>
+            <span class="version">Ver.1.3.0</span>
         </div>
 
         <!-- 住所検索Box -->
         <label>住所・地名検索:</label>
         <div class="search-box">
-            <input type="text" id="addressInput" placeholder="例: 大阪市天王寺区勝山4-9-17">
+            <input type="text" id="addressInput" placeholder="例: 大阪市天王寺区勝山4丁目">
             <button id="searchBtn" class="btn-primary">検索</button>
         </div>
 
@@ -78,10 +78,9 @@
     <!-- CesiumJS JS -->
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Cesium.js"></script>
     <script>
-        // アクセストークン不要で基本動作するよう設定
         Cesium.Ion.defaultAccessToken = '';
 
-        // 初期位置（勝山4-9-17）または前回の位置復元
+        // 初期位置（大阪市天王寺区勝山付近）
         const defaultLocation = {
             lon: 135.524223,
             lat: 34.654049,
@@ -100,15 +99,13 @@
             localStorage.setItem('drone_app_date', todayStr);
         }
 
-        // 地理院地図（標準地図）を背景プロバイダとしてビューア初期化（トークンエラー回避のためEllipsoid地形を使用）
-        const gsiImageryProvider = new Cesium.UrlTemplateImageryProvider({
-            url: 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',
-            credit: '国土地理院',
-            maximumLevel: 18
+        // 確実なOpenStreetMapタイルを使用して背景地図を表示
+        const osmImagery = new Cesium.OpenStreetMapImageryProvider({
+            url: 'https://tile.openstreetmap.org/'
         });
 
         const viewer = new Cesium.Viewer('cesiumContainer', {
-            imageryProvider: gsiImageryProvider,
+            imageryProvider: osmImagery,
             terrainProvider: new Cesium.EllipsoidTerrainProvider(),
             baseLayerPicker: false,
             geocoder: false,
@@ -142,22 +139,23 @@
             localStorage.setItem('drone_app_date', new Date().toISOString().split('T')[0]);
         });
 
-        // 住所検索機能（国土地理院 ジオコーディングAPI）
+        // 住所検索機能（Nominatim APIを利用して確実な位置取得）
         async function searchAddress() {
             const query = document.getElementById('addressInput').value.trim();
             if (!query) return;
 
             try {
-                const response = await fetch(`https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(query)}`);
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
                 const data = await response.json();
                 if (data && data.length > 0) {
-                    const coords = data[0].geometry.coordinates; // [lon, lat]
+                    const lon = parseFloat(data[0].lon);
+                    const lat = parseFloat(data[0].lat);
                     viewer.camera.flyTo({
-                        destination: Cesium.Cartesian3.fromDegrees(coords[0], coords[1], 300),
+                        destination: Cesium.Cartesian3.fromDegrees(lon, lat, 300),
                         orientation: { heading: 0.0, pitch: Cesium.Math.toRadians(-45), roll: 0.0 }
                     });
                 } else {
-                    alert('該当する住所が見つかりませんでした。');
+                    alert('該当する場所が見つかりませんでした。別のキーワード（例: 天王寺区役所 など）でお試しください。');
                 }
             } catch (e) {
                 console.error(e);
@@ -181,7 +179,7 @@
                 const osmBuildings = await Cesium.createOsmBuildingsAsync();
                 viewer.scene.primitives.add(osmBuildings);
                 buildingsLoaded = true;
-                alert('3Dビルモデル（OSM）を読み込みました。');
+                alert('3Dビルモデルを読み込みました。');
             } catch (err) {
                 console.error(err);
                 alert('3Dビルの読み込みに失敗しました。');
@@ -198,7 +196,7 @@
         handler.setInputAction(function (movement) {
             const pickedPosition = viewer.scene.pickPosition(movement.position);
             if (!pickedPosition) {
-                alert('3Dモデルの表面（または建物の角）を正確にクリックしてください。');
+                alert('3Dビルモデルの表面を正確にクリックしてください。');
                 return;
             }
 
