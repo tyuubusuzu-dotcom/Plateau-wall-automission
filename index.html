@@ -40,14 +40,14 @@
         .btn-danger:hover { background: #c82333; }
         .btn-3d { background: #17a2b8; color: #fff; }
         .btn-3d:hover { background: #138496; }
-        .btn-info { background: #17a2b8; color: #fff; }
-        .btn-info:hover { background: #138496; }
+        .btn-info { background: #007bff; color: #fff; }
+        .btn-info:hover { background: #0056b3; }
         .status { margin-top: 10px; font-size: 12px; color: #d9534f; background: #fdf7f7; padding: 8px; border-radius: 4px; border: 1px solid #ebccd1; line-height: 1.4; }
         .search-box { display: flex; gap: 5px; margin-top: 4px; }
         .search-box input { flex: 1; }
         .search-box button { width: 80px; margin-top: 0; padding: 6px; }
-        .zoom-controls { display: flex; gap: 5px; margin-top: 6px; }
-        .zoom-controls button { margin-top: 0; }
+        .zoom-controls { display: flex; gap: 5px; margin-top: 8px; }
+        .zoom-controls button { margin-top: 0; flex: 1; }
     </style>
 </head>
 <body>
@@ -56,7 +56,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.6.0</span>
+            <span class="version">Ver.2.6.1</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -69,7 +69,7 @@
         <!-- 3Dビルモデル読込ボタン -->
         <button id="load3dBtn" class="btn-3d">3Dビルモデルを表示する（300m圏内最適化）</button>
 
-        <!-- 画面拡大縮小ボタン -->
+        <!-- 画面拡大縮小ボタン（分かりやすい位置に配置） -->
         <div class="zoom-controls">
             <button id="zoomInBtn" class="btn-info">＋ 画面拡大</button>
             <button id="zoomOutBtn" class="btn-info">－ 画面縮小</button>
@@ -155,19 +155,34 @@
             navigationHelpButton: false
         });
 
-        // マウススクロールのズーム感度をさらに緩やかに調整（0.3にして微調整しやすく）
-        viewer.scene.screenSpaceCameraController.zoomFactor = 0.3;
+        // --- カスタム滑らかホイールズームの適用 ---
+        viewer.scene.screenSpaceCameraController.enableZoom = false; // デフォルトの急激なホイール挙動をオフ
+        const wheelHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+        wheelHandler.setInputAction(function(delta) {
+            const camera = viewer.camera;
+            const height = camera.positionCartographic.height;
+            const zoomRatio = 0.12; // 1スクロールあたりの移動割合（小さくするほど滑らか）
+
+            if (delta < 0) {
+                // 上スクロール（ズームイン）
+                const zoomAmount = Math.min(height * zoomRatio, height * 0.85);
+                camera.zoomIn(zoomAmount);
+            } else {
+                // 下スクロール（ズームアウト）
+                camera.zoomOut(height * zoomRatio);
+            }
+        }, Cesium.ScreenSpaceEventType.WHEEL);
 
         // 画面拡大ボタン（＋）
         document.getElementById('zoomInBtn').addEventListener('click', function() {
             const currentHeight = viewer.camera.positionCartographic.height;
-            viewer.camera.zoomIn(currentHeight * 0.3);
+            viewer.camera.zoomIn(currentHeight * 0.25);
         });
 
         // 画面縮小ボタン（－）
         document.getElementById('zoomOutBtn').addEventListener('click', function() {
             const currentHeight = viewer.camera.positionCartographic.height;
-            viewer.camera.zoomOut(currentHeight * 0.3);
+            viewer.camera.zoomOut(currentHeight * 0.25);
         });
 
         async function initBaseImagery() {
