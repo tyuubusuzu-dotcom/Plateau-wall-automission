@@ -50,7 +50,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.2.0</span>
+            <span class="version">Ver.2.3.0</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -68,10 +68,17 @@
         </div>
 
         <!-- A地点実測座標（D-RTK3補正用） -->
-        <label>A地点 実測座標 (D-RTK3 緯度 / 経度):</label>
+        <label>A地点 実測座標 (D-RTK3 緯度 / 経度) [任意]:</label>
         <div class="coord-group">
-            <input type="text" id="measuredLatA" placeholder="緯度 (例: 34.66019)">
-            <input type="text" id="measuredLonA" placeholder="経度 (例: 135.54889)">
+            <input type="text" id="measuredLatA" placeholder="緯度">
+            <input type="text" id="measuredLonA" placeholder="経度">
+        </div>
+
+        <!-- B地点実測座標（D-RTK3補正用） -->
+        <label>B地点 実測座標 (D-RTK3 緯度 / 経度) [任意]:</label>
+        <div class="coord-group">
+            <input type="text" id="measuredLatB" placeholder="緯度">
+            <input type="text" id="measuredLonB" placeholder="経度">
         </div>
 
         <label>壁からのオフセット距離 (m):</label>
@@ -232,7 +239,7 @@
             if (clickStep === 0) {
                 pointP1 = pickedPosition;
                 
-                // モデル上のA地点の緯度経度を算出して入力欄に初期セット
+                // A地点の緯度経度を自動セット
                 const cartoP1 = Cesium.Cartographic.fromCartesian(pointP1);
                 document.getElementById('measuredLatA').value = Cesium.Math.toDegrees(cartoP1.latitude).toFixed(7);
                 document.getElementById('measuredLonA').value = Cesium.Math.toDegrees(cartoP1.longitude).toFixed(7);
@@ -256,8 +263,14 @@
 
             } else if (clickStep === 1) {
                 pointP2 = pickedPosition;
+                
+                // B地点の緯度経度を自動セット
+                const cartoP2 = Cesium.Cartographic.fromCartesian(pointP2);
+                document.getElementById('measuredLatB').value = Cesium.Math.toDegrees(cartoP2.latitude).toFixed(7);
+                document.getElementById('measuredLonB').value = Cesium.Math.toDegrees(cartoP2.longitude).toFixed(7);
+
                 clickStep = 2;
-                document.getElementById('instruction').innerHTML = '3. ルート生成完了！D-RTK3の実測値を反映する場合は数値を書き換えて「ルート再計算」を押してください。';
+                document.getElementById('instruction').innerHTML = '3. ルート生成完了！AまたはBの実測値を書き換えて「ルート再計算」を押すと一括シフトできます。';
                 
                 const instEl = document.getElementById('instruction');
                 instEl.style.color = '#28a745';
@@ -291,22 +304,33 @@
 
             const measLatA = parseFloat(document.getElementById('measuredLatA').value);
             const measLonA = parseFloat(document.getElementById('measuredLonA').value);
+            const measLatB = parseFloat(document.getElementById('measuredLatB').value);
+            const measLonB = parseFloat(document.getElementById('measuredLonB').value);
 
             if (routeEntity) {
                 viewer.entities.remove(routeEntity);
                 routeEntity = null;
             }
 
-            // 実測値（D-RTK3）が入力されている場合、A地点のモデル位置を実測位置へシフトするための補正ベクトルを計算
-            let effectiveP1 = pointP1;
+            // AまたはBの実測値に基づいてシフト量を計算する
+            let modelShift = new Cesium.Cartesian3(0, 0, 0);
+
             if (!isNaN(measLatA) && !isNaN(measLonA)) {
+                // A地点の実測値が入力されている場合
                 const cartoModelA = Cesium.Cartographic.fromCartesian(pointP1);
                 const measuredCartoA = Cesium.Cartographic.fromDegrees(measLonA, measLatA, cartoModelA.height);
-                effectiveP1 = Cesium.Cartographic.toCartesian(measuredCartoA);
+                const effectiveMeasuredA = Cesium.Cartographic.toCartesian(measuredCartoA);
+                modelShift = Cesium.Cartesian3.subtract(effectiveMeasuredA, pointP1, new Cesium.Cartesian3());
+            } else if (!isNaN(measLatB) && !isNaN(measLonB)) {
+                // B地点の実測値が入力されている場合
+                const cartoModelB = Cesium.Cartographic.fromCartesian(pointP2);
+                const measuredCartoB = Cesium.Cartographic.fromDegrees(measLonB, measLatB, cartoModelB.height);
+                const effectiveMeasuredB = Cesium.Cartographic.toCartesian(measuredCartoB);
+                modelShift = Cesium.Cartesian3.subtract(effectiveMeasuredB, pointP2, new Cesium.Cartesian3());
             }
 
-            // A地点のシフト量に合わせてB地点も同じベクトルで平行移動させる
-            const modelShift = Cesium.Cartesian3.subtract(effectiveP1, pointP1, new Cesium.Cartesian3());
+            // シフトを適用した実効的なA・B地点
+            const effectiveP1 = Cesium.Cartesian3.add(pointP1, modelShift, new Cesium.Cartesian3());
             const effectiveP2 = Cesium.Cartesian3.add(pointP2, modelShift, new Cesium.Cartesian3());
 
             const midpoint = Cesium.Cartesian3.midpoint(effectiveP1, effectiveP2, new Cesium.Cartesian3());
