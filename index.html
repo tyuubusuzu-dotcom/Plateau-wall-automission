@@ -56,7 +56,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.7.0</span>
+            <span class="version">Ver.2.8.0</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -69,10 +69,11 @@
         <!-- 3Dビルモデル読込ボタン -->
         <button id="load3dBtn" class="btn-3d">3Dビルモデルを表示する（300m圏内最適化）</button>
 
-        <!-- 画面拡大縮小ボタン -->
+        <!-- 画面拡大縮小ボタン ＆ 北向きリセットボタン -->
         <div class="zoom-controls">
-            <button id="zoomInBtn" class="btn-info">＋ 画面拡大</button>
-            <button id="zoomOutBtn" class="btn-info">－ 画面縮小</button>
+            <button id="zoomInBtn" class="btn-info">＋ 拡大</button>
+            <button id="zoomOutBtn" class="btn-info">－ 縮小</button>
+            <button id="resetNorthBtn" class="btn-secondary" title="カメラの向きを北向きに揃える">北向きリセット</button>
         </div>
 
         <div class="status" id="instruction">
@@ -169,14 +170,30 @@
             }
         }, Cesium.ScreenSpaceEventType.WHEEL);
 
+        // 画面拡大ボタン（＋）
         document.getElementById('zoomInBtn').addEventListener('click', function() {
             const currentHeight = viewer.camera.positionCartographic.height;
             viewer.camera.zoomIn(currentHeight * 0.25);
         });
 
+        // 画面縮小ボタン（－）
         document.getElementById('zoomOutBtn').addEventListener('click', function() {
             const currentHeight = viewer.camera.positionCartographic.height;
             viewer.camera.zoomOut(currentHeight * 0.25);
+        });
+
+        // 北向きリセットボタン
+        document.getElementById('resetNorthBtn').addEventListener('click', function() {
+            const pos = viewer.camera.positionCartographic;
+            viewer.camera.flyTo({
+                destination: Cesium.Cartesian3.fromCartographic(pos),
+                orientation: {
+                    heading: Cesium.Math.toRadians(0.0), // 真北を向く
+                    pitch: viewer.camera.pitch,         // 現在の俯角を維持
+                    roll: 0.0
+                },
+                duration: 0.8
+            });
         });
 
         async function initBaseImagery() {
@@ -269,8 +286,7 @@
         let routeEntity = null;
         let pointEntities = [];
 
-        // Overpass APIから建物のフットプリント（コーナー座標）を取得する関数
-        async function fetchBuildingCorners(elementId, clickedPos) {
+        async function fetchBuildingCorners(elementId) {
             try {
                 const url = `https://overpass-api.de/api/interpreter?data=[out:json];way(${elementId});out geom;`;
                 const response = await fetch(url);
@@ -279,15 +295,14 @@
                     const way = data.elements[0];
                     if (way.geometry && way.geometry.length > 0) {
                         let nodes = way.geometry;
-                        // 重複する終点を削除
                         if (nodes.length > 1 && nodes[0].lat === nodes[nodes.length-1].lat && nodes[0].lon === nodes[nodes.length-1].lon) {
                             nodes.pop();
                         }
-                        return nodes; // [{lat, lon}, ...]
+                        return nodes;
                     }
                 }
             } catch (e) {
-                console.warn("Overpass API取得エラー（フォールバックを使用します）", e);
+                console.warn("Overpass API取得エラー", e);
             }
             return null;
         }
@@ -310,18 +325,15 @@
             }
             detectedBuildingHeight = estHeight;
 
-            // アプローチB: elementIdがあればOSMデータから正確なコーナーを自動抽出
             let elementId = null;
             if (picked && picked.getProperty) {
                 elementId = picked.getProperty('elementId') || picked.getProperty('id');
             }
 
             if (clickStep === 0) {
-                // A地点の決定
                 if (elementId) {
-                    const corners = await fetchBuildingCorners(elementId, pickedPosition);
+                    const corners = await fetchBuildingCorners(elementId);
                     if (corners && corners.length >= 3) {
-                        // クリック位置に最も近いコーナーをA地点に、その次のコーナーをB地点に自動設定！
                         let closestIdx = 0;
                         let minDist = Infinity;
                         corners.forEach((c, idx) => {
@@ -333,18 +345,16 @@
                         });
 
                         const nodeA = corners[closestIdx];
-                        // 隣接する角（時計回りまたは反時計回りから適切な方を選択）
                         const nodeB = corners[(closestIdx + 1) % corners.length];
 
-                        const topZ = clickedCarto.height; // おおよその高さ
+                        const topZ = clickedCarto.height;
                         pointP1 = Cesium.Cartesian3.fromDegrees(nodeA.lon, nodeA.lat, topZ);
                         pointP2 = Cesium.Cartesian3.fromDegrees(nodeB.lon, nodeB.lat, topZ);
 
-                        clickStep = 2; // 一度のクリックでA・B両方を自動抽出完了！
+                        clickStep = 2;
                     }
                 }
 
-                // フォールバック（APIが使えない場合や非OSMビル）
                 if (clickStep === 0) {
                     pointP1 = pickedPosition;
                     clickStep = 1;
@@ -363,7 +373,6 @@
                 pointEntities.push(pt1);
 
                 if (clickStep === 2) {
-                    // 自動抽出完了時の処理
                     const cartoP2 = Cesium.Cartographic.fromCartesian(pointP2);
                     document.getElementById('measuredLatB').value = Cesium.Math.toDegrees(cartoP2.latitude).toFixed(7);
                     document.getElementById('measuredLonB').value = Cesium.Math.toDegrees(cartoP2.longitude).toFixed(7);
@@ -386,7 +395,6 @@
                 }
 
             } else if (clickStep === 1) {
-                // 手動でのB地点選択
                 pointP2 = pickedPosition;
                 clickStep = 2;
                 document.getElementById('instruction').innerHTML = '3. ルート生成完了！パラメータ変更時は「ルート再計算」を押してください。';
