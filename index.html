@@ -33,17 +33,21 @@
         .btn-secondary:hover { background: #5a6268; }
         .btn-success { background: #28a745; }
         .btn-success:hover { background: #218838; }
-        .btn-success:disabled, .btn-warning:disabled, .btn-danger:disabled { background: #ccc; cursor: not-allowed; }
+        .btn-success:disabled, .btn-warning:disabled, .btn-danger:disabled, .btn-info:disabled { background: #ccc; cursor: not-allowed; }
         .btn-warning { background: #ffc107; color: #333; }
         .btn-warning:hover { background: #e0a800; }
         .btn-danger { background: #dc3545; }
         .btn-danger:hover { background: #c82333; }
         .btn-3d { background: #17a2b8; color: #fff; }
         .btn-3d:hover { background: #138496; }
+        .btn-info { background: #17a2b8; color: #fff; }
+        .btn-info:hover { background: #138496; }
         .status { margin-top: 10px; font-size: 12px; color: #d9534f; background: #fdf7f7; padding: 8px; border-radius: 4px; border: 1px solid #ebccd1; line-height: 1.4; }
         .search-box { display: flex; gap: 5px; margin-top: 4px; }
         .search-box input { flex: 1; }
         .search-box button { width: 80px; margin-top: 0; padding: 6px; }
+        .zoom-controls { display: flex; gap: 5px; margin-top: 6px; }
+        .zoom-controls button { margin-top: 0; }
     </style>
 </head>
 <body>
@@ -52,7 +56,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.5.0</span>
+            <span class="version">Ver.2.6.0</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -64,6 +68,12 @@
 
         <!-- 3Dビルモデル読込ボタン -->
         <button id="load3dBtn" class="btn-3d">3Dビルモデルを表示する（300m圏内最適化）</button>
+
+        <!-- 画面拡大縮小ボタン -->
+        <div class="zoom-controls">
+            <button id="zoomInBtn" class="btn-info">＋ 画面拡大</button>
+            <button id="zoomOutBtn" class="btn-info">－ 画面縮小</button>
+        </div>
 
         <div class="status" id="instruction">
             1. 地図上でビルを探し、上辺の**<span>「左上の角（A地点）」</span>**をクリックしてください。
@@ -104,6 +114,7 @@
         <button id="recalculateBtn" class="btn-warning" disabled>ルート再計算・シフト適用</button>
         <button id="clearSelectionBtn" class="btn-danger">地点選択やり直し</button>
         <button id="exportBtn" class="btn-success" disabled>ルート座標をCSVダウンロード</button>
+        <button id="exportKmlBtn" class="btn-success" disabled>ルート座標をKMLダウンロード</button>
         <button id="resetBtn" class="btn-secondary">完全リセット（初期位置に戻る）</button>
     </div>
 
@@ -144,8 +155,20 @@
             navigationHelpButton: false
         });
 
-        // マウススクロールによるズーム感度を調整（微調整しやすく）
-        viewer.scene.screenSpaceCameraController.zoomFactor = 1.5;
+        // マウススクロールのズーム感度をさらに緩やかに調整（0.3にして微調整しやすく）
+        viewer.scene.screenSpaceCameraController.zoomFactor = 0.3;
+
+        // 画面拡大ボタン（＋）
+        document.getElementById('zoomInBtn').addEventListener('click', function() {
+            const currentHeight = viewer.camera.positionCartographic.height;
+            viewer.camera.zoomIn(currentHeight * 0.3);
+        });
+
+        // 画面縮小ボタン（－）
+        document.getElementById('zoomOutBtn').addEventListener('click', function() {
+            const currentHeight = viewer.camera.positionCartographic.height;
+            viewer.camera.zoomOut(currentHeight * 0.3);
+        });
 
         async function initBaseImagery() {
             try {
@@ -208,7 +231,6 @@
             if (e.key === 'Enter') searchAddress();
         });
 
-        // 3Dビルモデル読込ボタン（表示中心300m圏内最適化）
         let buildingsLoaded = false;
         document.getElementById('load3dBtn').addEventListener('click', async function() {
             if (buildingsLoaded) {
@@ -218,10 +240,9 @@
             try {
                 const osmBuildings = await Cesium.createOsmBuildingsAsync();
                 
-                // 300m圏内周辺の描画を最適化する設定
                 osmBuildings.dynamicScreenSpaceError = true;
-                osmBuildings.dynamicScreenSpaceErrorDensity = 0.005; // 近くの高精度描画を優先し遠方をカット
-                osmBuildings.maximumMemoryUsage = 256; // メモリ制限を最適化
+                osmBuildings.dynamicScreenSpaceErrorDensity = 0.005;
+                osmBuildings.maximumMemoryUsage = 256;
 
                 viewer.scene.primitives.add(osmBuildings);
                 buildingsLoaded = true;
@@ -325,9 +346,10 @@
 
             document.getElementById('recalculateBtn').setAttribute('disabled', 'true');
             document.getElementById('exportBtn').setAttribute('disabled', 'true');
+            document.getElementById('exportKmlBtn').setAttribute('disabled', 'true');
 
             const instEl = document.getElementById('instruction');
-            instEl.innerHTML = '1. 地図上でビルを探し、上辺の**<span>「左上の角（A地点）」</span>**をクリックしてください。';
+            instEl.innerHTML = '1. 地図上でビルを探し、上辺の**<span>“左上の角（A地点）”</span>**をクリックしてください。';
             instEl.style.color = '#d9534f';
             instEl.style.borderColor = '#ebccd1';
             instEl.style.background = '#fdf7f7';
@@ -442,8 +464,10 @@
             });
 
             document.getElementById('exportBtn').removeAttribute('disabled');
+            document.getElementById('exportKmlBtn').removeAttribute('disabled');
         }
 
+        // CSVエクスポート
         document.getElementById('exportBtn').addEventListener('click', function() {
             if (generatedWaypoints.length === 0) return;
 
@@ -464,6 +488,47 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+        });
+
+        // KMLエクスポート
+        document.getElementById('exportKmlBtn').addEventListener('click', function() {
+            if (generatedWaypoints.length === 0) return;
+
+            let coordsText = "";
+            generatedWaypoints.forEach((pt) => {
+                const cartographic = Cesium.Cartographic.fromCartesian(pt);
+                const lat = Cesium.Math.toDegrees(cartographic.latitude);
+                const lon = Cesium.Math.toDegrees(cartographic.longitude);
+                const height = cartographic.height;
+                coordsText += `${lon.toFixed(8)},${lat.toFixed(8)},${height.toFixed(2)} `;
+            });
+
+            const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Drone Zigzag Flight Route</name>
+    <Placemark>
+      <name>Flight Path</name>
+      <LineString>
+        <tessellate>1</tessellate>
+        <altitudeMode>absolute</altitudeMode>
+        <coordinates>
+          ${coordsText.trim()}
+        </coordinates>
+      </LineString>
+    </Placemark>
+  </Document>
+</kml>`;
+
+            const blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", "drone_zigzag_route.kml");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
         });
 
         document.getElementById('resetBtn').addEventListener('click', function() {
