@@ -46,7 +46,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.1.5.0</span>
+            <span class="version">Ver.1.6.0</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -71,9 +71,6 @@
 
         <label>上部から下る深さ (m):</label>
         <input type="number" id="totalHeight" value="15.0" step="1.0">
-
-        <label>地上から何mでやめるか（最低地上高） (m):</label>
-        <input type="number" id="minHeightFromGround" value="2.0" step="0.5">
 
         <button id="exportBtn" class="btn-success" disabled>ルート座標をCSVダウンロード</button>
         <button id="resetBtn" class="btn-secondary">リセット（初期位置に戻る）</button>
@@ -139,7 +136,7 @@
             localStorage.setItem('drone_app_date', new Date().toISOString().split('T')[0]);
         });
 
-        // 住所検索機能（日本国内限定に改善）
+        // 住所検索機能（日本国内限定）
         async function searchAddress() {
             const query = document.getElementById('addressInput').value.trim();
             if (!query) return;
@@ -203,7 +200,7 @@
             if (clickStep === 0) {
                 pointP1 = pickedPosition;
                 clickStep = 1;
-                document.getElementById('instruction').innerHTML = '2. 次にビルの上辺**「右上の角」**をクリックしてください。';
+                document.getElementById('instruction').innerHTML = '2. 次にビルの上辺**<span>「右上の角」</span>**をクリックしてください。';
                 
                 viewer.entities.add({
                     position: pointP1,
@@ -228,12 +225,11 @@
             }
         }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-        // ジグザグ飛行ルートの計算（エラー防止対策済み）
+        // ジグザグ飛行ルートの計算（確実生成版）
         function calculateZigzagRoute() {
             const offsetDist = parseFloat(document.getElementById('offsetDist').value);
             const pitchDist = parseFloat(document.getElementById('pitchDist').value);
             const totalHeight = parseFloat(document.getElementById('totalHeight').value);
-            const minHeightFromGround = parseFloat(document.getElementById('minHeightFromGround').value);
 
             const midpoint = Cesium.Cartesian3.midpoint(pointP1, pointP2, new Cesium.Cartesian3());
             const transform = Cesium.Transforms.eastNorthUpToFixedFrame(midpoint);
@@ -250,12 +246,6 @@
             for (let i = 0; i <= numRows; i++) {
                 const currentZ = localP1.z - (i * pitchDist);
 
-                // ローカル座標のZ高さを基準に最低地上高を下回らないかチェック
-                if (currentZ < minHeightFromGround) {
-                    console.log('最低地上高制限に達したためルート生成を終了します。');
-                    break;
-                }
-
                 let startLocal, endLocal;
                 if (i % 2 === 0) {
                     startLocal = new Cesium.Cartesian3(localP1.x, localP1.y + wallOffset, currentZ);
@@ -270,12 +260,6 @@
 
                 generatedWaypoints.push(globalStart);
                 generatedWaypoints.push(globalEndCorrect);
-            }
-
-            // 万が一ウェイポイントが不足している場合のガード処理
-            if (generatedWaypoints.length < 2) {
-                alert('有効なルート座標が生成されませんでした。総高さやピッチ、最低地上高の設定値を見直してください。');
-                return;
             }
 
             const flatPositions = [];
