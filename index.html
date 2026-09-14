@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ドローン外壁ジグザグ飛行ルート生成アプリ（複数点対応）</title>
+    <title>ドローン外壁ジグザグ飛行ルート生成アプリ</title>
     <!-- Cesiumの内部ファイルを正しく読み込むための必須設定 -->
     <script>
         window.CESIUM_BASE_URL = 'https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/';
@@ -31,11 +31,11 @@
         .btn-secondary:hover { background: #5a6268; }
         .btn-success { background: #28a745; }
         .btn-success:hover { background: #218838; }
-        .btn-success:disabled, .btn-warning:disabled, .btn-info:disabled { background: #ccc; cursor: not-allowed; }
+        .btn-success:disabled, .btn-warning:disabled { background: #ccc; cursor: not-allowed; }
         .btn-warning { background: #ffc107; color: #333; }
         .btn-warning:hover { background: #e0a800; }
-        .btn-info { background: #17a2b8; color: #fff; }
-        .btn-info:hover { background: #138496; }
+        .btn-3d { background: #17a2b8; color: #fff; }
+        .btn-3d:hover { background: #138496; }
         .status { margin-top: 10px; font-size: 12px; color: #d9534f; background: #fdf7f7; padding: 8px; border-radius: 4px; border: 1px solid #ebccd1; line-height: 1.4; }
         .search-box { display: flex; gap: 5px; margin-top: 4px; }
         .search-box input { flex: 1; }
@@ -48,7 +48,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.0.0</span>
+            <span class="version">Ver.2.1.0</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -59,28 +59,31 @@
         </div>
 
         <!-- 3Dビルモデル読込ボタン -->
-        <button id="load3dBtn" class="btn-info">3Dビルモデルを表示する</button>
+        <button id="load3dBtn" class="btn-3d">3Dビルモデルを表示する</button>
 
         <div class="status" id="instruction">
-            1. 地図上でビルを探し、上部の角を**順番に複数点（左から右へ）**クリックしてください。
+            1. 地図上でビルを探し、上辺の**<span>「左上の角（A地点）」</span>**をクリックしてください。
         </div>
 
         <label>壁からのオフセット距離 (m):</label>
         <input type="number" id="offsetDist" value="5.0" step="0.5">
         
+        <label>上方のオフセット距離 (m):</label>
+        <input type="number" id="upwardOffset" value="1.0" step="0.5">
+
         <label>垂直ピッチ（何mおきに下がるか） (m):</label>
         <input type="number" id="pitchDist" value="1.0" step="0.5">
 
-        <label>開始端の延長距離 (m):</label>
+        <label>A側（左）の延長距離 (m):</label>
         <input type="number" id="extendA" value="0.0" step="0.5">
 
-        <label>終了端の延長距離 (m):</label>
+        <label>B側（右）の延長距離 (m):</label>
         <input type="number" id="extendB" value="0.0" step="0.5">
 
         <label>飛行させない最低地上高 (m):</label>
         <input type="number" id="minHeightFromGround" value="2.0" step="0.5">
 
-        <button id="calcBtn" class="btn-warning" disabled>ルート確定・計算</button>
+        <button id="recalculateBtn" class="btn-warning" disabled>ルート再計算</button>
         <button id="exportBtn" class="btn-success" disabled>ルート座標をCSVダウンロード</button>
         <button id="resetBtn" class="btn-secondary">リセット（初期位置に戻る）</button>
     </div>
@@ -200,12 +203,14 @@
             }
         });
 
-        // 複数点管理用変数
-        let clickedPoints = []; // クリックされた点の配列
+        // 状態変数（2点指定用）
+        let clickStep = 0;
+        let pointP1 = null; // A地点（左上）
+        let pointP2 = null; // B地点（右上）
         let detectedBuildingHeight = 30.0;
         let generatedWaypoints = [];
         let routeEntity = null;
-        let inputLineEntity = null;
+        let pointEntities = [];
 
         const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
         handler.setInputAction(function (movement) {
@@ -216,54 +221,57 @@
                 return;
             }
 
-            clickedPoints.push(pickedPosition);
-            const ptIndex = clickedPoints.length;
-
-            // 最初の一点をクリックしたときにビルの高さを自動取得
-            if (ptIndex === 1 && picked && picked.getProperty) {
-                const estH = picked.getProperty('cesium#estimatedHeight') || picked.getProperty('height');
-                if (estH) {
-                    detectedBuildingHeight = parseFloat(estH);
-                }
-            }
-
-            // ポイントを赤丸で表示
-            viewer.entities.add({
-                position: pickedPosition,
-                point: { pixelSize: 10, color: Cesium.Color.RED },
-                label: { text: `P${ptIndex}`, font: '11pt sans-serif', pixelOffset: new Cesium.Cartesian2(0, -18) }
-            });
-
-            // 入力中のラインを更新
-            if (inputLineEntity) {
-                viewer.entities.remove(inputLineEntity);
-            }
-            if (clickedPoints.length >= 2) {
-                inputLineEntity = viewer.entities.add({
-                    polyline: {
-                        positions: clickedPoints,
-                        width: 3,
-                        material: Cesium.Color.CYAN
+            if (clickStep === 0) {
+                pointP1 = pickedPosition;
+                
+                if (picked && picked.getProperty) {
+                    const estH = picked.getProperty('cesium#estimatedHeight') || picked.getProperty('height');
+                    if (estH) {
+                        detectedBuildingHeight = parseFloat(estH);
                     }
-                });
-            }
+                }
 
-            document.getElementById('instruction').innerHTML = `地点 P${ptIndex} を追加しました。続けてクリックするか、**「ルート確定・計算」**を押してください。`;
-            
-            if (clickedPoints.length >= 2) {
-                document.getElementById('calcBtn').removeAttribute('disabled');
+                clickStep = 1;
+                document.getElementById('instruction').innerHTML = '2. 次にビルの上辺**<span>「右上の角（B地点）」</span>**をクリックしてください。';
+                
+                const pt1 = viewer.entities.add({
+                    position: pointP1,
+                    point: { pixelSize: 12, color: Cesium.Color.RED },
+                    label: { text: 'A地点 (左上)', font: '12pt sans-serif', pixelOffset: new Cesium.Cartesian2(0, -20) }
+                });
+                pointEntities.push(pt1);
+
+            } else if (clickStep === 1) {
+                pointP2 = pickedPosition;
+                clickStep = 2;
+                document.getElementById('instruction').innerHTML = '3. ルート生成完了！パラメータ変更時は「ルート再計算」を押してください。';
+                
+                const instEl = document.getElementById('instruction');
+                instEl.style.color = '#28a745';
+                instEl.style.borderColor = '#d4edda';
+                instEl.style.background = '#f1f8f5';
+
+                const pt2 = viewer.entities.add({
+                    position: pointP2,
+                    point: { pixelSize: 12, color: Cesium.Color.BLUE },
+                    label: { text: 'B地点 (右上)', font: '12pt sans-serif', pixelOffset: new Cesium.Cartesian2(0, -20) }
+                });
+                pointEntities.push(pt2);
+
+                calculateZigzagRoute();
+                document.getElementById('recalculateBtn').removeAttribute('disabled');
             }
         }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-        // ルート確定・計算ボタン
-        document.getElementById('calcBtn').addEventListener('click', function() {
-            if (clickedPoints.length < 2) return;
+        document.getElementById('recalculateBtn').addEventListener('click', function() {
+            if (clickStep < 2) return;
             calculateZigzagRoute();
         });
 
-        // 複数点対応ジグザグ飛行ルート計算ロジック
+        // 安定した2点ベースのジグザグ飛行ルート計算
         function calculateZigzagRoute() {
             const offsetDist = parseFloat(document.getElementById('offsetDist').value) || 5.0;
+            const upwardOffset = parseFloat(document.getElementById('upwardOffset').value) || 0.0;
             const pitchDist = parseFloat(document.getElementById('pitchDist').value) || 1.0;
             const extendA = parseFloat(document.getElementById('extendA').value) || 0.0;
             const extendB = parseFloat(document.getElementById('extendB').value) || 0.0;
@@ -274,99 +282,64 @@
                 routeEntity = null;
             }
 
-            // 全体の中心を基準にENU変換行列を作成
-            const midpoint = clickedPoints[0];
+            const midpoint = Cesium.Cartesian3.midpoint(pointP1, pointP2, new Cesium.Cartesian3());
             const transform = Cesium.Transforms.eastNorthUpToFixedFrame(midpoint);
             const invTransform = Cesium.Matrix4.inverse(transform, new Cesium.Matrix4());
 
-            // すべてのクリック点をローカル座標に変換
-            const localPoints = clickedPoints.map(pt => Cesium.Matrix4.multiplyByPoint(invTransform, pt, new Cesium.Cartesian3()));
+            const localP1 = Cesium.Matrix4.multiplyByPoint(invTransform, pointP1, new Cesium.Cartesian3());
+            const localP2 = Cesium.Matrix4.multiplyByPoint(invTransform, pointP2, new Cesium.Cartesian3());
 
-            // 開始端(P1)と終了端(Pn)の延長処理
-            // P1側の延長
-            const vStart = Cesium.Cartesian3.subtract(localPoints[1], localPoints[0], new Cesium.Cartesian3());
-            vStart.z = 0;
-            const lenStart = Cesium.Cartesian3.magnitude(vStart);
-            const dirStart = lenStart > 0 ? Cesium.Cartesian3.normalize(vStart, new Cesium.Cartesian3()) : new Cesium.Cartesian3(1,0,0);
-            
-            const extendedLocalPoints = [...localPoints];
-            if (extendA > 0 && lenStart > 0) {
-                const extP1 = Cesium.Cartesian3.add(
-                    localPoints[0],
-                    Cesium.Cartesian3.multiplyByScalar(dirStart, -extendA, new Cesium.Cartesian3()),
-                    new Cesium.Cartesian3()
-                );
-                extendedLocalPoints[0] = extP1;
+            const dx = localP2.x - localP1.x;
+            const dy = localP2.y - localP1.y;
+            const horizLen = Math.sqrt(dx * dx + dy * dy);
+
+            if (horizLen === 0) {
+                alert('A地点とB地点が同じ位置です。');
+                return;
             }
 
-            // Pn側の延長
-            const n = localPoints.length;
-            const vEnd = Cesium.Cartesian3.subtract(localPoints[n-1], localPoints[n-2], new Cesium.Cartesian3());
-            vEnd.z = 0;
-            const lenEnd = Cesium.Cartesian3.magnitude(vEnd);
-            const dirEnd = lenEnd > 0 ? Cesium.Cartesian3.normalize(vEnd, new Cesium.Cartesian3()) : new Cesium.Cartesian3(1,0,0);
+            const ux = dx / horizLen;
+            const uy = dy / horizLen;
 
-            if (extendB > 0 && lenEnd > 0) {
-                const extPn = Cesium.Cartesian3.add(
-                    localPoints[n-1],
-                    Cesium.Cartesian3.multiplyByScalar(dirEnd, extendB, new Cesium.Cartesian3()),
-                    new Cesium.Cartesian3()
-                );
-                extendedLocalPoints[n-1] = extPn;
-            }
+            // 外向き法線ベクトル
+            const nx = uy;
+            const ny = -ux;
+
+            // 延長処理
+            const extA_x = localP1.x - ux * extendA;
+            const extA_y = localP1.y - uy * extendA;
+            const extB_x = localP2.x + ux * extendB;
+            const extB_y = localP2.y + uy * extendB;
+
+            const offsetX = nx * offsetDist;
+            const offsetY = ny * offsetDist;
 
             generatedWaypoints = [];
-            const topZ = localPoints[0].z;
-            const groundZ = topZ - detectedBuildingHeight;
+            
+            // 上方オフセットを反映した開始Z座標
+            const topZ = localP1.z + upwardOffset;
+            const groundZ = localP1.z - detectedBuildingHeight;
             const targetLowestZ = groundZ + minHeightFromGround;
 
             let currentZ = topZ;
             let rowIndex = 0;
 
             while (currentZ >= targetLowestZ) {
-                let rowWaypoints = [];
+                let startLocal, endLocal;
 
-                for (let i = 0; i < extendedLocalPoints.length; i++) {
-                    const pt = extendedLocalPoints[i];
-                    
-                    // 各セグメントでの外向き法線を近似計算してオフセットを適用
-                    let nx = 0, ny = -1; // デフォルト手前向き
-                    if (i < extendedLocalPoints.length - 1) {
-                        const dx = extendedLocalPoints[i+1].x - pt.x;
-                        const dy = extendedLocalPoints[i+1].y - pt.y;
-                        const len = Math.sqrt(dx*dx + dy*dy);
-                        if (len > 0) {
-                            nx = (dy / len);
-                            ny = (-dx / len);
-                        }
-                    } else if (i > 0) {
-                        const dx = pt.x - extendedLocalPoints[i-1].x;
-                        const dy = pt.y - extendedLocalPoints[i-1].y;
-                        const len = Math.sqrt(dx*dx + dy*dy);
-                        if (len > 0) {
-                            nx = (dy / len);
-                            ny = (-dx / len);
-                        }
-                    }
-
-                    const offsetPt = new Cesium.Cartesian3(
-                        pt.x + nx * offsetDist,
-                        pt.y + ny * offsetDist,
-                        currentZ
-                    );
-                    rowWaypoints.push(offsetPt);
+                if (rowIndex % 2 === 0) {
+                    startLocal = new Cesium.Cartesian3(extA_x + offsetX, extA_y + offsetY, currentZ);
+                    endLocal = new Cesium.Cartesian3(extB_x + offsetX, extB_y + offsetY, currentZ);
+                } else {
+                    startLocal = new Cesium.Cartesian3(extB_x + offsetX, extB_y + offsetY, currentZ);
+                    endLocal = new Cesium.Cartesian3(extA_x + offsetX, extA_y + offsetY, currentZ);
                 }
 
-                // 偶数行はそのまま（P1→Pn）、奇数行は逆順（Pn→P1）にしてジグザグにする
-                if (rowIndex % 2 !== 0) {
-                    rowWaypoints.reverse();
-                }
+                const globalStart = Cesium.Matrix4.multiplyByPoint(transform, startLocal, new Cesium.Cartesian3());
+                const globalEndCorrect = Cesium.Matrix4.multiplyByPoint(transform, endLocal, new Cesium.Cartesian3());
 
-                // グローバル座標に変換して追加
-                rowWaypoints.forEach(localPt => {
-                    const globalPt = Cesium.Matrix4.multiplyByPoint(transform, localPt, new Cesium.Cartesian3());
-                    generatedWaypoints.push(globalPt);
-                });
+                generatedWaypoints.push(globalStart);
+                generatedWaypoints.push(globalEndCorrect);
 
                 currentZ -= pitchDist;
                 rowIndex++;
@@ -377,7 +350,6 @@
                 return;
             }
 
-            // 3Dビューア上にルート（黄色い線）を描画
             routeEntity = viewer.entities.add({
                 polyline: {
                     positions: generatedWaypoints,
@@ -385,12 +357,6 @@
                     material: Cesium.Color.YELLOW
                 }
             });
-
-            const instEl = document.getElementById('instruction');
-            instEl.innerHTML = '3. ルート生成完了！CSVダウンロードまたはパラメータ変更して「ルート再計算」を押してください。';
-            instEl.style.color = '#28a745';
-            instEl.style.borderColor = '#d4edda';
-            instEl.style.background = '#f1f8f5';
 
             document.getElementById('exportBtn').removeAttribute('disabled');
         }
@@ -412,7 +378,7 @@
             const encodedUri = encodeURI(csvContent);
             const link = document.createElement("a");
             link.setAttribute("href", encodedUri);
-            link.setAttribute("download", "drone_complex_zigzag_route.csv");
+            link.setAttribute("download", "drone_zigzag_flight_route.csv");
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
