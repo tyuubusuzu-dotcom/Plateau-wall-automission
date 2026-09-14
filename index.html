@@ -48,7 +48,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.1.7.3</span>
+            <span class="version">Ver.1.7.4</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -110,14 +110,8 @@
             localStorage.setItem('drone_app_date', todayStr);
         }
 
-        // OpenStreetMapタイルを明示的に指定して背景地図を確実表示
-        const osmImagery = new Cesium.OpenStreetMapImageryProvider({
-            url: 'https://tile.openstreetmap.org/'
-        });
-
-        // ビューアの初期化
+        // ビューアの初期化（背景地図を確実に出すためCesium公式World Imageryを使用）
         const viewer = new Cesium.Viewer('cesiumContainer', {
-            imageryProvider: osmImagery,
             terrainProvider: new Cesium.EllipsoidTerrainProvider(),
             baseLayerPicker: false,
             geocoder: false,
@@ -125,6 +119,17 @@
             sceneModePicker: false,
             navigationHelpButton: false
         });
+
+        // Cesium ionの高画質背景マップを非同期で追加
+        async function initBaseImagery() {
+            try {
+                const imageryProvider = await Cesium.createWorldImageryAsync();
+                viewer.imageryLayers.addImageryProvider(imageryProvider);
+            } catch (e) {
+                console.error("背景画像の読み込みに失敗しました:", e);
+            }
+        }
+        initBaseImagery();
 
         // カメラ視点適用
         viewer.camera.setView({
@@ -264,7 +269,7 @@
             calculateZigzagRoute();
         });
 
-        // ジグザグ飛行ルートの計算（外側オフセット反転対応版）
+        // ジグザグ飛行ルートの計算
         function calculateZigzagRoute() {
             const offsetDist = parseFloat(document.getElementById('offsetDist').value) || 5.0;
             const pitchDist = parseFloat(document.getElementById('pitchDist').value) || 1.0;
@@ -298,7 +303,7 @@
             const ux = dx / horizLen;
             const uy = dy / horizLen;
 
-            // 法線ベクトルを反転させ、必ずビル手前側（外側）に向かうように修正
+            // 法線ベクトル（ビル外側を向く方向）
             const nx = uy;
             const ny = -ux;
 
