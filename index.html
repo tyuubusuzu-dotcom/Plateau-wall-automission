@@ -48,7 +48,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.1.7.1</span>
+            <span class="version">Ver.1.7.2</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -110,8 +110,14 @@
             localStorage.setItem('drone_app_date', todayStr);
         }
 
+        // OpenStreetMapタイルを明示的に指定して背景地図を確実表示
+        const osmImagery = new Cesium.OpenStreetMapImageryProvider({
+            url: 'https://tile.openstreetmap.org/'
+        });
+
         // ビューアの初期化
         const viewer = new Cesium.Viewer('cesiumContainer', {
+            imageryProvider: osmImagery,
             terrainProvider: new Cesium.EllipsoidTerrainProvider(),
             baseLayerPicker: false,
             geocoder: false,
@@ -232,9 +238,11 @@
                 pointP2 = pickedPosition;
                 clickStep = 2;
                 document.getElementById('instruction').innerHTML = '3. ルート生成完了！パラメータ変更時は「ルート再計算」を押してください。';
-                document.getElementById('instruction'].style.color = '#28a745';
-                document.getElementById('instruction').style.borderColor = '#d4edda';
-                document.getElementById('instruction').style.background = '#f1f8f5';
+                
+                const instEl = document.getElementById('instruction');
+                instEl.style.color = '#28a745';
+                instEl.style.borderColor = '#d4edda';
+                instEl.style.background = '#f1f8f5';
 
                 viewer.entities.add({
                     position: pointP2,
@@ -291,7 +299,6 @@
             const uy = dy / horizLen;
 
             // 壁の向きに対して正確に直交する外向き法線ベクトル (nx, ny)
-            // 西から東へ向かうベクトルに対し、右側（外側）を向く法線
             const nx = -uy;
             const ny = ux;
 
