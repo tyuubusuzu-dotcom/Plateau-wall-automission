@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ドローン外壁ジグザグ飛行ルート生成アプリ</title>
+    <!-- Cesiumの内部ファイルを正しく読み込むための必須設定 -->
+    <script>
+        window.CESIUM_BASE_URL = 'https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/';
+    </script>
     <!-- CesiumJS CSS -->
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     <style>
@@ -42,13 +46,13 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.1.4.1</span>
+            <span class="version">Ver.1.4.2</span>
         </div>
 
         <!-- 住所検索Box -->
         <label>住所・地名検索:</label>
         <div class="search-box">
-            <input type="text" id="addressInput" placeholder="例: 大阪市天王寺区勝山4丁目">
+            <input type="text" id="addressInput" placeholder="例: 大阪市中央区">
             <button id="searchBtn" class="btn-primary">検索</button>
         </div>
 
