@@ -33,9 +33,11 @@
         .btn-secondary:hover { background: #5a6268; }
         .btn-success { background: #28a745; }
         .btn-success:hover { background: #218838; }
-        .btn-success:disabled, .btn-warning:disabled { background: #ccc; cursor: not-allowed; }
+        .btn-success:disabled, .btn-warning:disabled, .btn-danger:disabled { background: #ccc; cursor: not-allowed; }
         .btn-warning { background: #ffc107; color: #333; }
         .btn-warning:hover { background: #e0a800; }
+        .btn-danger { background: #dc3545; }
+        .btn-danger:hover { background: #c82333; }
         .btn-3d { background: #17a2b8; color: #fff; }
         .btn-3d:hover { background: #138496; }
         .status { margin-top: 10px; font-size: 12px; color: #d9534f; background: #fdf7f7; padding: 8px; border-radius: 4px; border: 1px solid #ebccd1; line-height: 1.4; }
@@ -50,7 +52,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.3.0</span>
+            <span class="version">Ver.2.4.0</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -100,8 +102,9 @@
         <input type="number" id="minHeightFromGround" value="2.0" step="0.5">
 
         <button id="recalculateBtn" class="btn-warning" disabled>ルート再計算・シフト適用</button>
+        <button id="clearSelectionBtn" class="btn-danger">地点選択やり直し</button>
         <button id="exportBtn" class="btn-success" disabled>ルート座標をCSVダウンロード</button>
-        <button id="resetBtn" class="btn-secondary">リセット（初期位置に戻る）</button>
+        <button id="resetBtn" class="btn-secondary">完全リセット（初期位置に戻る）</button>
     </div>
 
     <!-- CesiumJS JS -->
@@ -140,6 +143,9 @@
             sceneModePicker: false,
             navigationHelpButton: false
         });
+
+        // マウススクロールによるズーム感度を調整（デフォルト5.0から1.5に変更して微調整しやすく）
+        viewer.scene.screenSpaceCameraController.zoomFactor = 1.5;
 
         async function initBaseImagery() {
             try {
@@ -239,7 +245,6 @@
             if (clickStep === 0) {
                 pointP1 = pickedPosition;
                 
-                // A地点の緯度経度を自動セット
                 const cartoP1 = Cesium.Cartographic.fromCartesian(pointP1);
                 document.getElementById('measuredLatA').value = Cesium.Math.toDegrees(cartoP1.latitude).toFixed(7);
                 document.getElementById('measuredLonA').value = Cesium.Math.toDegrees(cartoP1.longitude).toFixed(7);
@@ -264,7 +269,6 @@
             } else if (clickStep === 1) {
                 pointP2 = pickedPosition;
                 
-                // B地点の緯度経度を自動セット
                 const cartoP2 = Cesium.Cartographic.fromCartesian(pointP2);
                 document.getElementById('measuredLatB').value = Cesium.Math.toDegrees(cartoP2.latitude).toFixed(7);
                 document.getElementById('measuredLonB').value = Cesium.Math.toDegrees(cartoP2.longitude).toFixed(7);
@@ -294,6 +298,38 @@
             calculateZigzagRoute();
         });
 
+        // 「地点選択やり直し」ボタン
+        document.getElementById('clearSelectionBtn').addEventListener('click', function() {
+            clickStep = 0;
+            pointP1 = null;
+            pointP2 = null;
+            generatedWaypoints = [];
+
+            // 描画されたピンやルートのエンティティを削除
+            pointEntities.forEach(ent => viewer.entities.remove(ent));
+            pointEntities = [];
+            if (routeEntity) {
+                viewer.entities.remove(routeEntity);
+                routeEntity = null;
+            }
+
+            // 入力欄のクリア
+            document.getElementById('measuredLatA').value = '';
+            document.getElementById('measuredLonA').value = '';
+            document.getElementById('measuredLatB').value = '';
+            document.getElementById('measuredLonB').value = '';
+
+            // ボタンの無効化とインストールのリセット
+            document.getElementById('recalculateBtn').setAttribute('disabled', 'true');
+            document.getElementById('exportBtn').setAttribute('disabled', 'true');
+
+            const instEl = document.getElementById('instruction');
+            instEl.innerHTML = '1. 地図上でビルを探し、上辺の**<span>「左上の角（A地点）」</span>**をクリックしてください。';
+            instEl.style.color = '#d9534f';
+            instEl.style.borderColor = '#ebccd1';
+            instEl.style.background = '#fdf7f7';
+        });
+
         function calculateZigzagRoute() {
             const offsetDist = parseFloat(document.getElementById('offsetDist').value) || 5.0;
             const upwardOffset = parseFloat(document.getElementById('upwardOffset').value) || 0.0;
@@ -312,24 +348,20 @@
                 routeEntity = null;
             }
 
-            // AまたはBの実測値に基づいてシフト量を計算する
             let modelShift = new Cesium.Cartesian3(0, 0, 0);
 
             if (!isNaN(measLatA) && !isNaN(measLonA)) {
-                // A地点の実測値が入力されている場合
                 const cartoModelA = Cesium.Cartographic.fromCartesian(pointP1);
                 const measuredCartoA = Cesium.Cartographic.fromDegrees(measLonA, measLatA, cartoModelA.height);
                 const effectiveMeasuredA = Cesium.Cartographic.toCartesian(measuredCartoA);
                 modelShift = Cesium.Cartesian3.subtract(effectiveMeasuredA, pointP1, new Cesium.Cartesian3());
             } else if (!isNaN(measLatB) && !isNaN(measLonB)) {
-                // B地点の実測値が入力されている場合
                 const cartoModelB = Cesium.Cartographic.fromCartesian(pointP2);
                 const measuredCartoB = Cesium.Cartographic.fromDegrees(measLonB, measLatB, cartoModelB.height);
                 const effectiveMeasuredB = Cesium.Cartographic.toCartesian(measuredCartoB);
                 modelShift = Cesium.Cartesian3.subtract(effectiveMeasuredB, pointP2, new Cesium.Cartesian3());
             }
 
-            // シフトを適用した実効的なA・B地点
             const effectiveP1 = Cesium.Cartesian3.add(pointP1, modelShift, new Cesium.Cartesian3());
             const effectiveP2 = Cesium.Cartesian3.add(pointP2, modelShift, new Cesium.Cartesian3());
 
