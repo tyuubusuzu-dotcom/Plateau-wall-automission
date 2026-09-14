@@ -48,7 +48,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.1.0</span>
+            <span class="version">Ver.2.1.1</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -69,7 +69,7 @@
         <input type="number" id="offsetDist" value="5.0" step="0.5">
         
         <label>上方のオフセット距離 (m):</label>
-        <input type="number" id="upwardOffset" value="1.0" step="0.5">
+        <input type="number" id="upwardOffset" value="0.0" step="0.5">
 
         <label>垂直ピッチ（何mおきに下がるか） (m):</label>
         <input type="number" id="pitchDist" value="1.0" step="0.5">
@@ -203,10 +203,9 @@
             }
         });
 
-        // 状態変数（2点指定用）
         let clickStep = 0;
-        let pointP1 = null; // A地点（左上）
-        let pointP2 = null; // B地点（右上）
+        let pointP1 = null;
+        let pointP2 = null;
         let detectedBuildingHeight = 30.0;
         let generatedWaypoints = [];
         let routeEntity = null;
@@ -268,7 +267,6 @@
             calculateZigzagRoute();
         });
 
-        // 安定した2点ベースのジグザグ飛行ルート計算
         function calculateZigzagRoute() {
             const offsetDist = parseFloat(document.getElementById('offsetDist').value) || 5.0;
             const upwardOffset = parseFloat(document.getElementById('upwardOffset').value) || 0.0;
@@ -301,11 +299,9 @@
             const ux = dx / horizLen;
             const uy = dy / horizLen;
 
-            // 外向き法線ベクトル
             const nx = uy;
             const ny = -ux;
 
-            // 延長処理
             const extA_x = localP1.x - ux * extendA;
             const extA_y = localP1.y - uy * extendA;
             const extB_x = localP2.x + ux * extendB;
@@ -316,7 +312,6 @@
 
             generatedWaypoints = [];
             
-            // 上方オフセットを反映した開始Z座標
             const topZ = localP1.z + upwardOffset;
             const groundZ = localP1.z - detectedBuildingHeight;
             const targetLowestZ = groundZ + minHeightFromGround;
@@ -361,7 +356,6 @@
             document.getElementById('exportBtn').removeAttribute('disabled');
         }
 
-        // CSVエクスポート
         document.getElementById('exportBtn').addEventListener('click', function() {
             if (generatedWaypoints.length === 0) return;
 
@@ -384,7 +378,6 @@
             document.body.removeChild(link);
         });
 
-        // リセット
         document.getElementById('resetBtn').addEventListener('click', function() {
             localStorage.removeItem('drone_app_position');
             location.reload();
