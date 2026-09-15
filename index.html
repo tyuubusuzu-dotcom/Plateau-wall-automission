@@ -56,7 +56,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.9.1</span>
+            <span class="version">Ver.2.9.2</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -110,7 +110,7 @@
         <input type="number" id="extendB" value="0.0" step="0.5">
 
         <label>飛行させない最低地上高 (m):</label>
-        <input type="number" id="minHeightFromGround" value="2.0" step="0.5">
+        <input type="number" id="minHeightFromGround" value="4.5" step="0.5">
 
         <button id="recalculateBtn" class="btn-warning" disabled>ルート再計算・シフト適用</button>
         <button id="clearSelectionBtn" class="btn-danger">地点選択やり直し（ビル認識は維持）</button>
@@ -182,20 +182,18 @@
             viewer.camera.zoomOut(currentHeight * 0.25);
         });
 
-        // 北向きリセットボタン（選択中の建物中心軸ベース）
+        // 北向きリセットボタン
         document.getElementById('resetNorthBtn').addEventListener('click', function() {
             const camera = viewer.camera;
             
             if (pointP1 && pointP2) {
-                // A地点とB地点の中点（選択された建物の中心軸）を計算
                 const midpoint = Cesium.Cartesian3.midpoint(pointP1, pointP2, new Cesium.Cartesian3());
                 const currentPos = camera.position;
                 const distance = Cesium.Cartesian3.distance(currentPos, midpoint);
                 const currentPitch = camera.pitch;
                 const cartoMid = Cesium.Cartographic.fromCartesian(midpoint);
 
-                // 中点の南側にカメラを配置し、真北（Heading 0）を向いて建物中心を見下ろす
-                const latOffset = -0.0003; // 緯度方向のオフセット（南側）
+                const latOffset = -0.0003;
                 const targetLat = Cesium.Math.toDegrees(cartoMid.latitude) + latOffset;
                 const targetLon = Cesium.Math.toDegrees(cartoMid.longitude);
                 const targetHeight = cartoMid.height + (distance * Math.sin(Math.abs(currentPitch)));
@@ -203,14 +201,13 @@
                 viewer.camera.flyTo({
                     destination: Cesium.Cartesian3.fromDegrees(targetLon, targetLat, Math.max(targetHeight, cartoMid.height + 50)),
                     orientation: {
-                        heading: Cesium.Math.toRadians(0.0), // 真北
-                        pitch: currentPitch,                 // 現在の俯角を維持
+                        heading: Cesium.Math.toRadians(0.0),
+                        pitch: currentPitch,
                         roll: 0.0
                     },
                     duration: 0.8
                 });
             } else {
-                // 地点未選択の場合は現在のカメラ位置を維持したまま北向きにする
                 const currentPosition = camera.position;
                 const currentPitch = camera.pitch;
                 viewer.camera.flyTo({
@@ -307,7 +304,6 @@
             }
         });
 
-        // 状態変数（3ステップ制御用）
         let clickStep = 0;
         let pointP1 = null; 
         let pointP2 = null; 
@@ -326,7 +322,6 @@
             }
 
             if (clickStep === 0) {
-                // 【1クリック目】ビル認識
                 if (picked && picked.getProperty) {
                     const estH = picked.getProperty('cesium#estimatedHeight') || picked.getProperty('height');
                     if (estH) {
@@ -340,7 +335,6 @@
                 document.getElementById('instruction').style.background = '#cce5ff';
 
             } else if (clickStep === 1) {
-                // 【2クリック目】A地点選択
                 pointP1 = pickedPosition;
                 
                 const cartoP1 = Cesium.Cartographic.fromCartesian(pointP1);
@@ -358,7 +352,6 @@
                 pointEntities.push(pt1);
 
             } else if (clickStep === 2) {
-                // 【3クリック目】B地点選択 ＆ ルート計算
                 pointP2 = pickedPosition;
                 
                 const cartoP2 = Cesium.Cartographic.fromCartesian(pointP2);
@@ -390,9 +383,8 @@
             calculateZigzagRoute();
         });
 
-        // 「地点選択やり直し」ボタン（ビルの認識は保持したまま、A・B地点のピンとルートのみリセット）
         document.getElementById('clearSelectionBtn').addEventListener('click', function() {
-            clickStep = 1; // ビル認識済み(step=1)の状態に戻す
+            clickStep = 1;
             pointP1 = null;
             pointP2 = null;
             generatedWaypoints = [];
@@ -420,7 +412,6 @@
             instEl.style.background = '#cce5ff';
         });
 
-        // 完全リセット（ルート・設定・ビル認識すべて初期化、カメラ位置は維持）
         document.getElementById('resetBtn').addEventListener('click', function() {
             clickStep = 0;
             pointP1 = null;
@@ -444,7 +435,7 @@
             document.getElementById('pitchDist').value = "1.0";
             document.getElementById('extendA').value = "0.0";
             document.getElementById('extendB').value = "0.0";
-            document.getElementById('minHeightFromGround').value = "2.0";
+            document.getElementById('minHeightFromGround').value = "4.5";
 
             document.getElementById('recalculateBtn').setAttribute('disabled', 'true');
             document.getElementById('exportBtn').setAttribute('disabled', 'true');
@@ -465,7 +456,7 @@
             const pitchDist = parseFloat(document.getElementById('pitchDist').value) || 1.0;
             const extendA = parseFloat(document.getElementById('extendA').value) || 0.0;
             const extendB = parseFloat(document.getElementById('extendB').value) || 0.0;
-            const minHeightFromGround = parseFloat(document.getElementById('minHeightFromGround').value) || 2.0;
+            const minHeightFromGround = parseFloat(document.getElementById('minHeightFromGround').value) || 4.5;
 
             const measLatA = parseFloat(document.getElementById('measuredLatA').value);
             const measLonA = parseFloat(document.getElementById('measuredLonA').value);
