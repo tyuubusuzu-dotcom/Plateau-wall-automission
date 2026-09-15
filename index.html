@@ -56,7 +56,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.8.1</span>
+            <span class="version">Ver.2.8.2</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -116,7 +116,7 @@
         <button id="clearSelectionBtn" class="btn-danger">地点選択やり直し</button>
         <button id="exportBtn" class="btn-success" disabled>ルート座標をCSVダウンロード</button>
         <button id="exportKmlBtn" class="btn-success" disabled>ルート座標をKMLダウンロード</button>
-        <button id="resetBtn" class="btn-secondary">完全リセット（初期位置に戻る）</button>
+        <button id="resetBtn" class="btn-secondary">リセット（ルート・設定初期化）</button>
     </div>
 
     <!-- CesiumJS JS -->
@@ -156,7 +156,7 @@
             navigationHelpButton: false
         });
 
-        // --- マウスホイールズーム方向逆転 ＆ 滑らかなカスタム制御 ---
+        // マウスホイールズーム方向逆転 ＆ 滑らかなカスタム制御
         viewer.scene.screenSpaceCameraController.enableZoom = false;
         const wheelHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
         wheelHandler.setInputAction(function(delta) {
@@ -164,7 +164,6 @@
             const height = camera.positionCartographic.height;
             const zoomRatio = 0.12;
             if (delta > 0) {
-                // 方向を逆転（上スクロールで遠ざかる、下スクロールで近づくなどの調整）
                 camera.zoomIn(Math.min(height * zoomRatio, height * 0.85));
             } else {
                 camera.zoomOut(height * zoomRatio);
@@ -183,15 +182,15 @@
             viewer.camera.zoomOut(currentHeight * 0.25);
         });
 
-        // 北向きリセットボタン（確実動作版）
+        // 北向きリセットボタン
         document.getElementById('resetNorthBtn').addEventListener('click', function() {
             const currentPosition = viewer.camera.position;
             const currentPitch = viewer.camera.pitch;
             viewer.camera.flyTo({
                 destination: currentPosition,
                 orientation: {
-                    heading: Cesium.Math.toRadians(0.0), // 真北 (0度)
-                    pitch: currentPitch,                 // 現在の俯角を保持
+                    heading: Cesium.Math.toRadians(0.0),
+                    pitch: currentPitch,
                     roll: 0.0
                 },
                 duration: 0.6
@@ -456,6 +455,45 @@
             instEl.style.background = '#fdf7f7';
         });
 
+        // 修正版リセットボタン（カメラ位置を動かさずに、ルート・ピン・入力値だけ初期化）
+        document.getElementById('resetBtn').addEventListener('click', function() {
+            clickStep = 0;
+            pointP1 = null;
+            pointP2 = null;
+            generatedWaypoints = [];
+
+            pointEntities.forEach(ent => viewer.entities.remove(ent));
+            pointEntities = [];
+            if (routeEntity) {
+                viewer.entities.remove(routeEntity);
+                routeEntity = null;
+            }
+
+            document.getElementById('measuredLatA').value = '';
+            document.getElementById('measuredLonA').value = '';
+            document.getElementById('measuredLatB').value = '';
+            document.getElementById('measuredLonB').value = '';
+
+            document.getElementById('offsetDist').value = "5.0";
+            document.getElementById('upwardOffset').value = "0.0";
+            document.getElementById('pitchDist').value = "1.0";
+            document.getElementById('extendA').value = "0.0";
+            document.getElementById('extendB').value = "0.0";
+            document.getElementById('minHeightFromGround').value = "2.0";
+
+            document.getElementById('recalculateBtn').setAttribute('disabled', 'true');
+            document.getElementById('exportBtn').setAttribute('disabled', 'true');
+            document.getElementById('exportKmlBtn').setAttribute('disabled', 'true');
+
+            const instEl = document.getElementById('instruction');
+            instEl.innerHTML = '1. 地図上でビルをクリックしてください（<strong>コーナー自動抽出モード</strong>）。';
+            instEl.style.color = '#d9534f';
+            instEl.style.borderColor = '#ebccd1';
+            instEl.style.background = '#fdf7f7';
+
+            alert('ルートおよび設定値を初期化しました（現在のカメラ位置は維持されます）。');
+        });
+
         function calculateZigzagRoute() {
             const offsetDist = parseFloat(document.getElementById('offsetDist').value) || 5.0;
             const upwardOffset = parseFloat(document.getElementById('upwardOffset').value) || 0.0;
@@ -630,11 +668,6 @@
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
-        });
-
-        document.getElementById('resetBtn').addEventListener('click', function() {
-            localStorage.removeItem('drone_app_position');
-            location.reload();
         });
     </script>
 </body>
