@@ -56,7 +56,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.9.2</span>
+            <span class="version">Ver.2.9.3</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -94,8 +94,8 @@
             <input type="text" id="measuredLonB" placeholder="経度">
         </div>
 
-        <label>壁からのオフセット距離 (m):</label>
-        <input type="number" id="offsetDist" value="5.0" step="0.5">
+        <label>壁からのオフセット距離 (m) [最小2.0m]:</label>
+        <input type="number" id="offsetDist" value="5.0" min="2.0" step="0.5">
         
         <label>上方のオフセット距離 (m):</label>
         <input type="number" id="upwardOffset" value="0.0" step="0.5">
@@ -304,6 +304,7 @@
             }
         });
 
+        // 状態変数（3ステップ制御用）
         let clickStep = 0;
         let pointP1 = null; 
         let pointP2 = null; 
@@ -322,6 +323,7 @@
             }
 
             if (clickStep === 0) {
+                // 【1クリック目】ビル認識
                 if (picked && picked.getProperty) {
                     const estH = picked.getProperty('cesium#estimatedHeight') || picked.getProperty('height');
                     if (estH) {
@@ -335,6 +337,7 @@
                 document.getElementById('instruction').style.background = '#cce5ff';
 
             } else if (clickStep === 1) {
+                // 【2クリック目】A地点選択
                 pointP1 = pickedPosition;
                 
                 const cartoP1 = Cesium.Cartographic.fromCartesian(pointP1);
@@ -352,6 +355,7 @@
                 pointEntities.push(pt1);
 
             } else if (clickStep === 2) {
+                // 【3クリック目】B地点選択 ＆ ルート計算
                 pointP2 = pickedPosition;
                 
                 const cartoP2 = Cesium.Cartographic.fromCartesian(pointP2);
@@ -452,6 +456,13 @@
 
         function calculateZigzagRoute() {
             const offsetDist = parseFloat(document.getElementById('offsetDist').value) || 5.0;
+            
+            // --- 2.0m未満のオフセットに対する安全制限バリデーション ---
+            if (offsetDist < 2.0) {
+                alert('近寄りすぎです！距離を離してください。（壁からのオフセットは2.0m以上を指定してください）');
+                return;
+            }
+
             const upwardOffset = parseFloat(document.getElementById('upwardOffset').value) || 0.0;
             const pitchDist = parseFloat(document.getElementById('pitchDist').value) || 1.0;
             const extendA = parseFloat(document.getElementById('extendA').value) || 0.0;
