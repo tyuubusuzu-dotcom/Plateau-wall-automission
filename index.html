@@ -56,7 +56,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.8.2</span>
+            <span class="version">Ver.2.9.0</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -77,7 +77,7 @@
         </div>
 
         <div class="status" id="instruction">
-            1. 地図上でビルをクリックしてください（<strong>コーナー自動抽出モード</strong>）。
+            1. 地図上で対象の**ビルをクリックして認識**させてください。
         </div>
 
         <!-- A地点実測座標（D-RTK3補正用） -->
@@ -113,10 +113,10 @@
         <input type="number" id="minHeightFromGround" value="2.0" step="0.5">
 
         <button id="recalculateBtn" class="btn-warning" disabled>ルート再計算・シフト適用</button>
-        <button id="clearSelectionBtn" class="btn-danger">地点選択やり直し</button>
+        <button id="clearSelectionBtn" class="btn-danger">地点選択やり直し（ビル認識は維持）</button>
         <button id="exportBtn" class="btn-success" disabled>ルート座標をCSVダウンロード</button>
         <button id="exportKmlBtn" class="btn-success" disabled>ルート座標をKMLダウンロード</button>
-        <button id="resetBtn" class="btn-secondary">リセット（ルート・設定初期化）</button>
+        <button id="resetBtn" class="btn-secondary">リセット（すべて初期化）</button>
     </div>
 
     <!-- CesiumJS JS -->
@@ -279,6 +279,11 @@
             }
         });
 
+        // 状態変数（3ステップ制御用）
+        // clickStep = 0: ビル未認識
+        // clickStep = 1: ビル認識済み、A地点未選択
+        // clickStep = 2: A地点選択済み、B地点未選択
+        // clickStep = 3: 完了
         let clickStep = 0;
         let pointP1 = null; 
         let pointP2 = null; 
@@ -287,29 +292,8 @@
         let routeEntity = null;
         let pointEntities = [];
 
-        async function fetchBuildingCorners(elementId) {
-            try {
-                const url = `https://overpass-api.de/api/interpreter?data=[out:json];way(${elementId});out geom;`;
-                const response = await fetch(url);
-                const data = await response.json();
-                if (data.elements && data.elements.length > 0) {
-                    const way = data.elements[0];
-                    if (way.geometry && way.geometry.length > 0) {
-                        let nodes = way.geometry;
-                        if (nodes.length > 1 && nodes[0].lat === nodes[nodes.length-1].lat && nodes[0].lon === nodes[nodes.length-1].lon) {
-                            nodes.pop();
-                        }
-                        return nodes;
-                    }
-                }
-            } catch (e) {
-                console.warn("Overpass API取得エラー", e);
-            }
-            return null;
-        }
-
         const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-        handler.setInputAction(async function (movement) {
+        handler.setInputAction(function (movement) {
             const picked = viewer.scene.pick(movement.position);
             const pickedPosition = viewer.scene.pickPosition(movement.position);
             if (!pickedPosition) {
@@ -317,54 +301,30 @@
                 return;
             }
 
-            let clickedCarto = Cesium.Cartographic.fromCartesian(pickedPosition);
-            let estHeight = 30.0;
-
-            if (picked && picked.getProperty) {
-                const estH = picked.getProperty('cesium#estimatedHeight') || picked.getProperty('height');
-                if (estH) estHeight = parseFloat(estH);
-            }
-            detectedBuildingHeight = estHeight;
-
-            let elementId = null;
-            if (picked && picked.getProperty) {
-                elementId = picked.getProperty('elementId') || picked.getProperty('id');
-            }
-
             if (clickStep === 0) {
-                if (elementId) {
-                    const corners = await fetchBuildingCorners(elementId);
-                    if (corners && corners.length >= 3) {
-                        let closestIdx = 0;
-                        let minDist = Infinity;
-                        corners.forEach((c, idx) => {
-                            const dist = Math.hypot(c.lat - Cesium.Math.toDegrees(clickedCarto.latitude), c.lon - Cesium.Math.toDegrees(clickedCarto.longitude));
-                            if (dist < minDist) {
-                                minDist = dist;
-                                closestIdx = idx;
-                            }
-                        });
-
-                        const nodeA = corners[closestIdx];
-                        const nodeB = corners[(closestIdx + 1) % corners.length];
-
-                        const topZ = clickedCarto.height;
-                        pointP1 = Cesium.Cartesian3.fromDegrees(nodeA.lon, nodeA.lat, topZ);
-                        pointP2 = Cesium.Cartesian3.fromDegrees(nodeB.lon, nodeB.lat, topZ);
-
-                        clickStep = 2;
+                // 【1クリック目】ビル認識
+                if (picked && picked.getProperty) {
+                    const estH = picked.getProperty('cesium#estimatedHeight') || picked.getProperty('height');
+                    if (estH) {
+                        detectedBuildingHeight = parseFloat(estH);
                     }
                 }
+                clickStep = 1;
+                document.getElementById('instruction').innerHTML = '2. ビルを認識しました。次に上辺の**<span>「A地点（左上の角）」</span>**をクリックしてください。';
+                document.getElementById('instruction').style.color = '#0056b3';
+                document.getElementById('instruction').style.borderColor = '#b8daff';
+                document.getElementById('instruction').style.background = '#cce5ff';
 
-                if (clickStep === 0) {
-                    pointP1 = pickedPosition;
-                    clickStep = 1;
-                    document.getElementById('instruction').innerHTML = '2. 次にビルの上辺**<span>「右上の角（B地点）」</span>**をクリックしてください。';
-                }
-
+            } else if (clickStep === 1) {
+                // 【2クリック目】A地点選択
+                pointP1 = pickedPosition;
+                
                 const cartoP1 = Cesium.Cartographic.fromCartesian(pointP1);
                 document.getElementById('measuredLatA').value = Cesium.Math.toDegrees(cartoP1.latitude).toFixed(7);
                 document.getElementById('measuredLonA').value = Cesium.Math.toDegrees(cartoP1.longitude).toFixed(7);
+
+                clickStep = 2;
+                document.getElementById('instruction').innerHTML = '3. 次に上辺の**<span>「B地点（右上の角）」</span>**をクリックしてください。';
 
                 const pt1 = viewer.entities.add({
                     position: pointP1,
@@ -373,41 +333,21 @@
                 });
                 pointEntities.push(pt1);
 
-                if (clickStep === 2) {
-                    const cartoP2 = Cesium.Cartographic.fromCartesian(pointP2);
-                    document.getElementById('measuredLatB').value = Cesium.Math.toDegrees(cartoP2.latitude).toFixed(7);
-                    document.getElementById('measuredLonB').value = Cesium.Math.toDegrees(cartoP2.longitude).toFixed(7);
-
-                    document.getElementById('instruction').innerHTML = '3. コーナー自動抽出完了！「ルート再計算」またはパラメータ調整を行ってください。';
-                    const instEl = document.getElementById('instruction');
-                    instEl.style.color = '#28a745';
-                    instEl.style.borderColor = '#d4edda';
-                    instEl.style.background = '#f1f8f5';
-
-                    const pt2 = viewer.entities.add({
-                        position: pointP2,
-                        point: { pixelSize: 12, color: Cesium.Color.BLUE },
-                        label: { text: 'B地点 (右上)', font: '12pt sans-serif', pixelOffset: new Cesium.Cartesian2(0, -20) }
-                    });
-                    pointEntities.push(pt2);
-
-                    calculateZigzagRoute();
-                    document.getElementById('recalculateBtn').removeAttribute('disabled');
-                }
-
-            } else if (clickStep === 1) {
+            } else if (clickStep === 2) {
+                // 【3クリック目】B地点選択 ＆ ルート計算
                 pointP2 = pickedPosition;
-                clickStep = 2;
-                document.getElementById('instruction').innerHTML = '3. ルート生成完了！パラメータ変更時は「ルート再計算」を押してください。';
+                
+                const cartoP2 = Cesium.Cartographic.fromCartesian(pointP2);
+                document.getElementById('measuredLatB').value = Cesium.Math.toDegrees(cartoP2.latitude).toFixed(7);
+                document.getElementById('measuredLonB').value = Cesium.Math.toDegrees(cartoP2.longitude).toFixed(7);
+
+                clickStep = 3;
+                document.getElementById('instruction').innerHTML = '4. ルート生成完了！パラメータ変更時は「ルート再計算」を押してください。';
                 
                 const instEl = document.getElementById('instruction');
                 instEl.style.color = '#28a745';
                 instEl.style.borderColor = '#d4edda';
                 instEl.style.background = '#f1f8f5';
-
-                const cartoP2 = Cesium.Cartographic.fromCartesian(pointP2);
-                document.getElementById('measuredLatB').value = Cesium.Math.toDegrees(cartoP2.latitude).toFixed(7);
-                document.getElementById('measuredLonB').value = Cesium.Math.toDegrees(cartoP2.longitude).toFixed(7);
 
                 const pt2 = viewer.entities.add({
                     position: pointP2,
@@ -422,12 +362,13 @@
         }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
         document.getElementById('recalculateBtn').addEventListener('click', function() {
-            if (clickStep < 2) return;
+            if (clickStep < 3) return;
             calculateZigzagRoute();
         });
 
+        // 「地点選択やり直し」ボタン（ビルの認識は保持したまま、A・B地点のピンとルートのみリセット）
         document.getElementById('clearSelectionBtn').addEventListener('click', function() {
-            clickStep = 0;
+            clickStep = 1; // ビル認識済み(step=1)の状態に戻す
             pointP1 = null;
             pointP2 = null;
             generatedWaypoints = [];
@@ -449,13 +390,13 @@
             document.getElementById('exportKmlBtn').setAttribute('disabled', 'true');
 
             const instEl = document.getElementById('instruction');
-            instEl.innerHTML = '1. 地図上でビルをクリックしてください（<strong>コーナー自動抽出モード</strong>）。';
-            instEl.style.color = '#d9534f';
-            instEl.style.borderColor = '#ebccd1';
-            instEl.style.background = '#fdf7f7';
+            instEl.innerHTML = 'ビル認識維持中：2. 上辺の**<span>「A地点（左上の角）」</span>**をクリックしてください。';
+            instEl.style.color = '#0056b3';
+            instEl.style.borderColor = '#b8daff';
+            instEl.style.background = '#cce5ff';
         });
 
-        // 修正版リセットボタン（カメラ位置を動かさずに、ルート・ピン・入力値だけ初期化）
+        // 完全リセット（ルート・設定・ビル認識すべて初期化、カメラ位置は維持）
         document.getElementById('resetBtn').addEventListener('click', function() {
             clickStep = 0;
             pointP1 = null;
@@ -486,12 +427,12 @@
             document.getElementById('exportKmlBtn').setAttribute('disabled', 'true');
 
             const instEl = document.getElementById('instruction');
-            instEl.innerHTML = '1. 地図上でビルをクリックしてください（<strong>コーナー自動抽出モード</strong>）。';
+            instEl.innerHTML = '1. 地図上で対象の**ビルをクリックして認識**させてください。';
             instEl.style.color = '#d9534f';
             instEl.style.borderColor = '#ebccd1';
             instEl.style.background = '#fdf7f7';
 
-            alert('ルートおよび設定値を初期化しました（現在のカメラ位置は維持されます）。');
+            alert('すべて初期化しました（現在のカメラ位置は維持されます）。');
         });
 
         function calculateZigzagRoute() {
