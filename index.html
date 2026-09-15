@@ -56,7 +56,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.8.0</span>
+            <span class="version">Ver.2.8.1</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -156,14 +156,15 @@
             navigationHelpButton: false
         });
 
-        // 滑らかホイールズーム
+        // --- マウスホイールズーム方向逆転 ＆ 滑らかなカスタム制御 ---
         viewer.scene.screenSpaceCameraController.enableZoom = false;
         const wheelHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
         wheelHandler.setInputAction(function(delta) {
             const camera = viewer.camera;
             const height = camera.positionCartographic.height;
             const zoomRatio = 0.12;
-            if (delta < 0) {
+            if (delta > 0) {
+                // 方向を逆転（上スクロールで遠ざかる、下スクロールで近づくなどの調整）
                 camera.zoomIn(Math.min(height * zoomRatio, height * 0.85));
             } else {
                 camera.zoomOut(height * zoomRatio);
@@ -182,17 +183,18 @@
             viewer.camera.zoomOut(currentHeight * 0.25);
         });
 
-        // 北向きリセットボタン
+        // 北向きリセットボタン（確実動作版）
         document.getElementById('resetNorthBtn').addEventListener('click', function() {
-            const pos = viewer.camera.positionCartographic;
+            const currentPosition = viewer.camera.position;
+            const currentPitch = viewer.camera.pitch;
             viewer.camera.flyTo({
-                destination: Cesium.Cartesian3.fromCartographic(pos),
+                destination: currentPosition,
                 orientation: {
-                    heading: Cesium.Math.toRadians(0.0), // 真北を向く
-                    pitch: viewer.camera.pitch,         // 現在の俯角を維持
+                    heading: Cesium.Math.toRadians(0.0), // 真北 (0度)
+                    pitch: currentPitch,                 // 現在の俯角を保持
                     roll: 0.0
                 },
-                duration: 0.8
+                duration: 0.6
             });
         });
 
