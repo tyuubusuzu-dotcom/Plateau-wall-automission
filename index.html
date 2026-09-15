@@ -56,7 +56,7 @@
     <div id="panel">
         <div class="panel-header">
             <h3>外壁点検ルート自動生成</h3>
-            <span class="version">Ver.2.9.0</span>
+            <span class="version">Ver.2.9.1</span>
         </div>
 
         <!-- 住所検索Box -->
@@ -73,7 +73,7 @@
         <div class="zoom-controls">
             <button id="zoomInBtn" class="btn-info">＋ 拡大</button>
             <button id="zoomOutBtn" class="btn-info">－ 縮小</button>
-            <button id="resetNorthBtn" class="btn-secondary" title="カメラの向きを北向きに揃える">北向きリセット</button>
+            <button id="resetNorthBtn" class="btn-secondary" title="選択中の建物を中心に北向きに揃える">北向きリセット</button>
         </div>
 
         <div class="status" id="instruction">
@@ -182,19 +182,47 @@
             viewer.camera.zoomOut(currentHeight * 0.25);
         });
 
-        // 北向きリセットボタン
+        // 北向きリセットボタン（選択中の建物中心軸ベース）
         document.getElementById('resetNorthBtn').addEventListener('click', function() {
-            const currentPosition = viewer.camera.position;
-            const currentPitch = viewer.camera.pitch;
-            viewer.camera.flyTo({
-                destination: currentPosition,
-                orientation: {
-                    heading: Cesium.Math.toRadians(0.0),
-                    pitch: currentPitch,
-                    roll: 0.0
-                },
-                duration: 0.6
-            });
+            const camera = viewer.camera;
+            
+            if (pointP1 && pointP2) {
+                // A地点とB地点の中点（選択された建物の中心軸）を計算
+                const midpoint = Cesium.Cartesian3.midpoint(pointP1, pointP2, new Cesium.Cartesian3());
+                const currentPos = camera.position;
+                const distance = Cesium.Cartesian3.distance(currentPos, midpoint);
+                const currentPitch = camera.pitch;
+                const cartoMid = Cesium.Cartographic.fromCartesian(midpoint);
+
+                // 中点の南側にカメラを配置し、真北（Heading 0）を向いて建物中心を見下ろす
+                const latOffset = -0.0003; // 緯度方向のオフセット（南側）
+                const targetLat = Cesium.Math.toDegrees(cartoMid.latitude) + latOffset;
+                const targetLon = Cesium.Math.toDegrees(cartoMid.longitude);
+                const targetHeight = cartoMid.height + (distance * Math.sin(Math.abs(currentPitch)));
+
+                viewer.camera.flyTo({
+                    destination: Cesium.Cartesian3.fromDegrees(targetLon, targetLat, Math.max(targetHeight, cartoMid.height + 50)),
+                    orientation: {
+                        heading: Cesium.Math.toRadians(0.0), // 真北
+                        pitch: currentPitch,                 // 現在の俯角を維持
+                        roll: 0.0
+                    },
+                    duration: 0.8
+                });
+            } else {
+                // 地点未選択の場合は現在のカメラ位置を維持したまま北向きにする
+                const currentPosition = camera.position;
+                const currentPitch = camera.pitch;
+                viewer.camera.flyTo({
+                    destination: currentPosition,
+                    orientation: {
+                        heading: Cesium.Math.toRadians(0.0),
+                        pitch: currentPitch,
+                        roll: 0.0
+                    },
+                    duration: 0.6
+                });
+            }
         });
 
         async function initBaseImagery() {
@@ -280,10 +308,6 @@
         });
 
         // 状態変数（3ステップ制御用）
-        // clickStep = 0: ビル未認識
-        // clickStep = 1: ビル認識済み、A地点未選択
-        // clickStep = 2: A地点選択済み、B地点未選択
-        // clickStep = 3: 完了
         let clickStep = 0;
         let pointP1 = null; 
         let pointP2 = null; 
